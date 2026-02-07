@@ -2281,35 +2281,7 @@ const AppContent = () => {
     checkSession();
   }, [isSupabaseReady]);
 
-  // Load profiles as staff data
-  useEffect(() => {
-    const loadProfiles = async () => {
-      if (!isSupabaseReady || !user) return;
-
-      try {
-        const profiles = await getAllProfiles();
-        if (profiles && profiles.length > 0) {
-          setStaffData(profiles.map(p => ({
-            id: p.id,
-            username: p.username,
-            name: p.name,
-            role: p.role,
-            dailyWage: p.daily_wage,
-            daily_wage: p.daily_wage,
-            phone: p.phone,
-            startDate: p.start_date,
-            active: p.active
-          })));
-        }
-      } catch (error) {
-        console.error('Error loading profiles:', error);
-      }
-    };
-
-    loadProfiles();
-  }, [isSupabaseReady, user]);
-
-  // Load data from Google Sheets
+  // Load data from Google Sheets (including staff data)
   useEffect(() => {
     const loadData = async () => {
       if (googleSheets.scriptUrl && !dataLoaded && user) {
@@ -2319,6 +2291,21 @@ const AppContent = () => {
           if (data.projects?.length > 0) setProjects(data.projects);
           if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
           if (data.advances?.length > 0) setAdvances(data.advances);
+          // Load staff data from Google Sheets
+          if (data.staff?.length > 0) {
+            setStaffData(data.staff.map(s => ({
+              id: s.id,
+              username: s.username,
+              name: s.name,
+              role: s.role,
+              dailyWage: Number(s.dailyWage) || 0,
+              daily_wage: Number(s.dailyWage) || 0,
+              phone: s.phone,
+              startDate: s.startDate,
+              start_date: s.startDate,
+              active: s.active !== false && s.active !== 'false'
+            })));
+          }
           setDataLoaded(true);
         }
       }
