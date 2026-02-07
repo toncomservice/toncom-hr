@@ -1,0 +1,2707 @@
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import {
+  User, Lock, LogOut, Plus, Minus, Camera, Upload, Search,
+  TrendingUp, TrendingDown, Wallet, Calendar, Clock, AlertCircle,
+  CheckCircle, XCircle, ChevronRight, BarChart3, PieChart, Receipt,
+  Building2, Users, CreditCard, ArrowUpRight, ArrowDownRight,
+  Home, FileText, Settings, DollarSign, Briefcase, X, Check,
+  Loader2, Image as ImageIcon, Trash2, Edit3, Save, Filter,
+  Cloud, CloudOff, RefreshCw, Database, Wifi, WifiOff, Mail
+} from 'lucide-react';
+import {
+  getSupabase,
+  getSupabaseConfig,
+  saveSupabaseConfig,
+  isSupabaseConfigured,
+  resetSupabaseInstance,
+  getProfile,
+  getAllProfiles,
+  resetUserPassword,
+  verifyPassword,
+  getProfileByUsername,
+  getGoogleScriptUrl,
+  saveGoogleScriptUrl,
+  getGeminiApiKey,
+  saveGeminiApiKey,
+} from './lib/supabase';
+
+// ================== ERROR BOUNDARY ==================
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+            <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-gray-800 mb-2">เกิดข้อผิดพลาด</h2>
+            <p className="text-gray-600 mb-4">กรุณารีเฟรชหน้าเว็บหรือติดต่อผู้ดูแลระบบ</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-indigo-700 transition"
+            >
+              รีเฟรชหน้าเว็บ
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// ================== GOOGLE SHEETS INTEGRATION ==================
+const STORAGE_KEYS = {
+  SCRIPT_URL: 'money_tracker_script_url',
+  GEMINI_KEY: 'money_tracker_gemini_key',
+  OFFLINE_DATA: 'money_tracker_offline_data',
+  PENDING_SYNC: 'money_tracker_pending_sync'
+};
+
+// Custom Hook สำหรับเชื่อมต่อ Google Sheets
+const useGoogleSheets = (initialData, isReady = false) => {
+  const [scriptUrl, setScriptUrl] = useState('');
+  const [isConnected, setIsConnected] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState(null);
+  const [error, setError] = useState(null);
+  const [pendingActions, setPendingActions] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // โหลด URL จาก database เมื่อ ready
+  useEffect(() => {
+    if (!isReady) return;
+    const loadUrl = async () => {
+      try {
+        const url = await getGoogleScriptUrl();
+        if (url) {
+          setScriptUrl(url);
+        }
+      } catch (err) {
+        console.error('Error loading Google Script URL:', err);
+      }
+    };
+    loadUrl();
+  }, [isReady]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(pendingActions));
+  }, [pendingActions]);
+
+  const saveScriptUrl = useCallback(async (url) => {
+    setScriptUrl(url);
+    setIsConnected(false);
+    setError(null);
+    // บันทึกลง database
+    try {
+      await saveGoogleScriptUrl(url);
+    } catch (err) {
+      console.error('Error saving Google Script URL:', err);
+    }
+  }, []);
+
+  const testConnection = useCallback(async () => {
+    if (!scriptUrl) {
+      setError('กรุณาใส่ Google Script URL');
+      return false;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${scriptUrl}?action=ping`);
+      if (!response.ok) throw new Error('Connection failed');
+
+      const data = await response.json();
+      if (data.status === 'ok') {
+        setIsConnected(true);
+        setError(null);
+        return true;
+      }
+      throw new Error('Invalid response');
+    } catch (err) {
+      setIsConnected(false);
+      setError('ไม่สามารถเชื่อมต่อได้ ตรวจสอบ URL และการ Deploy');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [scriptUrl]);
+
+  const fetchAllData = useCallback(async () => {
+    if (!scriptUrl) return null;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${scriptUrl}?action=getAll`);
+      if (!response.ok) throw new Error('Fetch failed');
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      setIsConnected(true);
+      setLastSync(new Date());
+      localStorage.setItem(STORAGE_KEYS.OFFLINE_DATA, JSON.stringify(data));
+
+      return data;
+    } catch (err) {
+      setError('ไม่สามารถดึงข้อมูลได้');
+      setIsConnected(false);
+
+      const cached = localStorage.getItem(STORAGE_KEYS.OFFLINE_DATA);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [scriptUrl]);
+
+  const sendRequest = useCallback(async (action, data) => {
+    if (!scriptUrl) {
+      setPendingActions(prev => [...prev, { action, data, timestamp: Date.now() }]);
+      return { success: true, offline: true };
+    }
+
+    setIsSyncing(true);
+    try {
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        body: JSON.stringify({ action, data })
+      });
+
+      if (!response.ok) throw new Error('Request failed');
+
+      const result = await response.json();
+      if (result.error) throw new Error(result.error);
+
+      setLastSync(new Date());
+      return result;
+    } catch (err) {
+      setPendingActions(prev => [...prev, { action, data, timestamp: Date.now() }]);
+      return { success: true, offline: true, error: err.message };
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [scriptUrl]);
+
+  const syncPendingActions = useCallback(async () => {
+    if (!scriptUrl || pendingActions.length === 0) return;
+
+    setIsSyncing(true);
+    const failed = [];
+
+    for (const item of pendingActions) {
+      try {
+        const response = await fetch(scriptUrl, {
+          method: 'POST',
+          body: JSON.stringify({ action: item.action, data: item.data })
+        });
+
+        if (!response.ok) throw new Error('Sync failed');
+      } catch {
+        failed.push(item);
+      }
+    }
+
+    setPendingActions(failed);
+    if (failed.length === 0) {
+      setLastSync(new Date());
+    }
+    setIsSyncing(false);
+  }, [scriptUrl, pendingActions]);
+
+  const saveTransaction = useCallback((transaction, isNew = true) => {
+    return sendRequest(isNew ? 'addTransaction' : 'updateTransaction', transaction);
+  }, [sendRequest]);
+
+  const deleteTransaction = useCallback((id) => {
+    return sendRequest('deleteTransaction', { id });
+  }, [sendRequest]);
+
+  const saveProject = useCallback((project, isNew = true) => {
+    return sendRequest(isNew ? 'addProject' : 'updateProject', project);
+  }, [sendRequest]);
+
+  const saveAdvance = useCallback((advance) => {
+    return sendRequest('addAdvance', advance);
+  }, [sendRequest]);
+
+  const saveAttendance = useCallback((attendance) => {
+    return sendRequest('saveAttendance', attendance);
+  }, [sendRequest]);
+
+  const saveStaff = useCallback((staff, isNew = true) => {
+    return sendRequest(isNew ? 'addStaff' : 'updateStaff', staff);
+  }, [sendRequest]);
+
+  const deleteStaff = useCallback((id) => {
+    return sendRequest('deleteStaff', { id });
+  }, [sendRequest]);
+
+  const bulkImport = useCallback(async (data) => {
+    return sendRequest('bulkImport', data);
+  }, [sendRequest]);
+
+  return {
+    scriptUrl,
+    saveScriptUrl,
+    isConnected,
+    isLoading,
+    isSyncing,
+    lastSync,
+    error,
+    pendingActions,
+    testConnection,
+    fetchAllData,
+    syncPendingActions,
+    saveTransaction,
+    deleteTransaction,
+    saveProject,
+    saveAdvance,
+    saveAttendance,
+    saveStaff,
+    deleteStaff,
+    bulkImport
+  };
+};
+
+// ================== CONSTANTS & INITIAL DATA ==================
+const EXPENSE_CATEGORIES = ['ค่าอุปกรณ์', 'ค่าเดินทาง', 'ค่าแรงช่าง', 'ค่าอาหาร', 'ค่าเบ็ดเตล็ด', 'อื่นๆ'];
+const INCOME_CATEGORIES = ['ค่าติดตั้ง', 'ค่าบริการ', 'ค่าซ่อมบำรุง', 'ค่าอุปกรณ์', 'อื่นๆ'];
+
+// ข้อมูลเริ่มต้นเป็นค่าว่าง - ใช้ข้อมูลจริงจาก Google Sheets
+const INITIAL_PROJECTS = [];
+const INITIAL_TRANSACTIONS = [];
+const INITIAL_ATTENDANCE = {};
+const INITIAL_ADVANCES = [];
+
+// ================== GEMINI API FUNCTION ==================
+const analyzeReceiptWithGemini = async (base64Image, apiKey) => {
+  if (!apiKey) {
+    throw new Error('กรุณาใส่ Gemini API Key');
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            {
+              text: `วิเคราะห์ใบเสร็จนี้และส่งข้อมูลกลับมาในรูปแบบ JSON ดังนี้:
+{
+  "amount": ยอดเงินรวมทั้งหมด (ตัวเลขเท่านั้น),
+  "items": "รายการสินค้า/บริการ (รวมเป็นข้อความเดียว)",
+  "date": "วันที่ในใบเสร็จ (รูปแบบ YYYY-MM-DD หรือ null ถ้าไม่มี)",
+  "vendor": "ชื่อร้าน/ผู้ขาย (หรือ null ถ้าไม่มี)"
+}
+ตอบเฉพาะ JSON เท่านั้น ไม่ต้องมีคำอธิบายเพิ่มเติม`
+            },
+            {
+              inlineData: {
+                mimeType: 'image/jpeg',
+                data: base64Image
+              }
+            }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 500
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error('ไม่สามารถเชื่อมต่อ Gemini API ได้');
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    return JSON.parse(jsonMatch[0]);
+  }
+  throw new Error('ไม่สามารถอ่านข้อมูลจากใบเสร็จได้');
+};
+
+// ================== UTILITY FUNCTIONS ==================
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat('th-TH', {
+    style: 'currency',
+    currency: 'THB',
+    minimumFractionDigits: 0,
+  }).format(amount);
+};
+
+const formatDate = (dateStr) => {
+  const date = new Date(dateStr);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const generateId = (prefix) => `${prefix}${Date.now()}`;
+
+const getCurrentMonth = () => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// ================== COMPONENTS ==================
+
+// Supabase Setup Screen
+const SupabaseSetupScreen = ({ onSetupComplete }) => {
+  const [url, setUrl] = useState('');
+  const [anonKey, setAnonKey] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      saveSupabaseConfig(url, anonKey);
+      resetSupabaseInstance();
+
+      const supabase = getSupabase();
+      if (!supabase) {
+        throw new Error('ไม่สามารถสร้าง Supabase client ได้');
+      }
+
+      const { error } = await supabase.auth.getSession();
+      if (error) throw error;
+
+      onSetupComplete();
+    } catch (err) {
+      setError(err.message || 'ไม่สามารถเชื่อมต่อได้ ตรวจสอบ URL และ Key');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Database className="w-10 h-10 text-indigo-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800">ตั้งค่า Supabase</h1>
+          <p className="text-gray-500 mt-2">เชื่อมต่อกับ Supabase เพื่อใช้งานระบบ</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Supabase URL
+            </label>
+            <input
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="https://xxx.supabase.co"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Anon Key
+            </label>
+            <input
+              type="password"
+              value={anonKey}
+              onChange={(e) => setAnonKey(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="eyJhbGciOi..."
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Check className="w-5 h-5" />
+            )}
+            บันทึกและเชื่อมต่อ
+          </button>
+        </form>
+
+        <div className="mt-6 p-4 bg-indigo-50 rounded-xl">
+          <h3 className="text-sm font-medium text-indigo-800 mb-2">วิธีหาค่า URL และ Key</h3>
+          <ol className="text-xs text-indigo-700 space-y-1 list-decimal list-inside">
+            <li>ไปที่ supabase.com และสร้าง project</li>
+            <li>ไปที่ Settings &gt; API</li>
+            <li>คัดลอก Project URL และ anon public key</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Login Screen - verify from profiles table
+const LoginScreen = ({ onLogin }) => {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      // ตรวจสอบ username + password จากตาราง profiles
+      const profile = await verifyPassword(username, password);
+
+      if (profile) {
+        // บันทึก session ลง localStorage
+        const sessionData = {
+          user: profile,
+          loginTime: Date.now(),
+        };
+        localStorage.setItem('money_tracker_session', JSON.stringify(sessionData));
+        onLogin(profile);
+      } else {
+        setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError(err.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
+        <div className="text-center mb-8">
+          <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Wallet className="w-10 h-10 text-indigo-600" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-800">Money Tracker Pro</h1>
+          <p className="text-gray-500 mt-2">ระบบจัดการรายรับ-รายจ่าย</p>
+        </div>
+
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              ชื่อผู้ใช้
+            </label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                placeholder="Username"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              รหัสผ่าน
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+                placeholder="รหัสผ่าน"
+                required
+              />
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <LogOut className="w-5 h-5" />
+            )}
+            เข้าสู่ระบบ
+          </button>
+        </form>
+
+        <p className="mt-6 text-xs text-gray-500 text-center">
+          ติดต่อผู้ดูแลระบบเพื่อสร้างบัญชีใหม่
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// Loading Screen
+const LoadingScreen = () => (
+  <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
+    <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
+      <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
+      <p className="text-gray-600">กำลังโหลด...</p>
+    </div>
+  </div>
+);
+
+// Autocomplete Input Component
+const AutocompleteInput = ({ value, onChange, suggestions, placeholder, icon: Icon }) => {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [filteredSuggestions, setFilteredSuggestions] = useState([]);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (value && suggestions.length > 0) {
+      const filtered = suggestions.filter(s =>
+        s.toLowerCase().includes(value.toLowerCase())
+      ).slice(0, 5);
+      setFilteredSuggestions(filtered);
+    } else {
+      setFilteredSuggestions([]);
+    }
+  }, [value, suggestions]);
+
+  return (
+    <div className="relative">
+      {Icon && (
+        <Icon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+      )}
+      <input
+        ref={inputRef}
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setShowSuggestions(true)}
+        onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+        className={`w-full ${Icon ? 'pl-10' : 'pl-4'} pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition`}
+        placeholder={placeholder}
+      />
+      {showSuggestions && filteredSuggestions.length > 0 && (
+        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-auto">
+          {filteredSuggestions.map((suggestion, index) => (
+            <button
+              key={index}
+              type="button"
+              className="w-full px-4 py-2 text-left hover:bg-indigo-50 transition text-sm"
+              onClick={() => {
+                onChange(suggestion);
+                setShowSuggestions(false);
+              }}
+            >
+              {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Stats Card Component
+const StatsCard = ({ title, value, subtitle, icon: Icon, color = 'indigo', trend }) => {
+  const colorClasses = {
+    indigo: 'bg-indigo-50 text-indigo-600',
+    emerald: 'bg-emerald-50 text-emerald-600',
+    red: 'bg-red-50 text-red-600',
+    purple: 'bg-purple-50 text-purple-600',
+    yellow: 'bg-yellow-50 text-yellow-600',
+  };
+
+  return (
+    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm text-gray-500">{title}</p>
+          <p className={`text-xl font-bold ${color === 'red' ? 'text-red-600' : `text-${color}-600`}`}>
+            {value}
+          </p>
+          {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+        </div>
+        <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+      </div>
+      {trend && (
+        <div className={`mt-2 flex items-center gap-1 text-xs ${trend > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+          {trend > 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+          <span>{Math.abs(trend)}% จากเดือนก่อน</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Transaction Form Modal
+const TransactionModal = ({
+  isOpen,
+  onClose,
+  onSave,
+  projects,
+  suggestions,
+  geminiApiKey,
+  setGeminiApiKey,
+  editingTransaction
+}) => {
+  const [type, setType] = useState('expense');
+  const [amount, setAmount] = useState('');
+  const [category, setCategory] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [description, setDescription] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (editingTransaction) {
+      setType(editingTransaction.type);
+      setAmount(editingTransaction.amount.toString());
+      setCategory(editingTransaction.category);
+      setProjectId(editingTransaction.projectId);
+      setDescription(editingTransaction.description);
+      setDate(editingTransaction.date);
+    } else {
+      resetForm();
+    }
+  }, [editingTransaction]);
+
+  const resetForm = () => {
+    setType('expense');
+    setAmount('');
+    setCategory('');
+    setProjectId('');
+    setDescription('');
+    setDate(new Date().toISOString().split('T')[0]);
+    setScanError('');
+  };
+
+  const handleImageCapture = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!geminiApiKey) {
+      setShowApiKeyInput(true);
+      return;
+    }
+
+    setIsScanning(true);
+    setScanError('');
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        try {
+          const result = await analyzeReceiptWithGemini(base64, geminiApiKey);
+          if (result.amount) setAmount(result.amount.toString());
+          if (result.items) setDescription(result.items);
+          if (result.date) setDate(result.date);
+        } catch (err) {
+          setScanError(err.message);
+        }
+        setIsScanning(false);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      setScanError('ไม่สามารถอ่านไฟล์รูปภาพได้');
+      setIsScanning(false);
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!amount || !category || !projectId) return;
+
+    onSave({
+      id: editingTransaction?.id || generateId('T'),
+      type,
+      amount: parseFloat(amount),
+      category,
+      projectId,
+      description,
+      date,
+      createdBy: 'admin'
+    });
+
+    resetForm();
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  const categories = type === 'income' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-auto">
+        <div className="sticky top-0 bg-white p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">
+            {editingTransaction ? 'แก้ไขรายการ' : 'เพิ่มรายการใหม่'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {/* Type Toggle */}
+          <div className="flex gap-2 p-1 bg-gray-100 rounded-xl">
+            <button
+              type="button"
+              onClick={() => setType('income')}
+              className={`flex-1 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2 ${type === 'income'
+                ? 'bg-emerald-500 text-white shadow'
+                : 'text-gray-600 hover:bg-gray-200'
+                }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              รายรับ
+            </button>
+            <button
+              type="button"
+              onClick={() => setType('expense')}
+              className={`flex-1 py-2 rounded-lg font-medium transition flex items-center justify-center gap-2 ${type === 'expense'
+                ? 'bg-red-500 text-white shadow'
+                : 'text-gray-600 hover:bg-gray-200'
+                }`}
+            >
+              <TrendingDown className="w-4 h-4" />
+              รายจ่าย
+            </button>
+          </div>
+
+          {/* OCR Scanner */}
+          <div className="border-2 border-dashed border-gray-300 rounded-xl p-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleImageCapture}
+              className="hidden"
+            />
+
+            {showApiKeyInput && !geminiApiKey ? (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600">ใส่ Gemini API Key เพื่อใช้งาน OCR</p>
+                <input
+                  type="text"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="AIza..."
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-2 bg-indigo-500 text-white rounded-lg text-sm"
+                >
+                  บันทึกและเลือกรูป
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isScanning}
+                className="w-full flex flex-col items-center gap-2 text-gray-500 hover:text-indigo-600 transition"
+              >
+                {isScanning ? (
+                  <>
+                    <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+                    <span className="text-sm">กำลังสแกนใบเสร็จ...</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <Camera className="w-8 h-8" />
+                      <ImageIcon className="w-8 h-8" />
+                    </div>
+                    <span className="text-sm">ถ่ายรูป / เลือกรูปใบเสร็จ (AI OCR)</span>
+                  </>
+                )}
+              </button>
+            )}
+
+            {scanError && (
+              <p className="text-red-500 text-sm mt-2 text-center">{scanError}</p>
+            )}
+          </div>
+
+          {/* Amount */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">จำนวนเงิน</label>
+            <div className="relative">
+              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-lg font-semibold"
+                placeholder="0"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Project */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">โปรเจกต์</label>
+            <select
+              value={projectId}
+              onChange={(e) => setProjectId(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              required
+            >
+              <option value="">-- เลือกโปรเจกต์ --</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">หมวดหมู่</label>
+            <div className="flex flex-wrap gap-2">
+              {categories.map(cat => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setCategory(cat)}
+                  className={`px-3 py-2 rounded-lg text-sm transition ${category === cat
+                    ? type === 'income'
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-red-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">รายละเอียด</label>
+            <AutocompleteInput
+              value={description}
+              onChange={setDescription}
+              suggestions={suggestions}
+              placeholder="รายละเอียดรายการ..."
+              icon={FileText}
+            />
+          </div>
+
+          {/* Date */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">วันที่</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            />
+          </div>
+
+          {/* Submit */}
+          <button
+            type="submit"
+            className={`w-full py-3 rounded-xl font-medium text-white transition flex items-center justify-center gap-2 ${type === 'income'
+              ? 'bg-emerald-500 hover:bg-emerald-600'
+              : 'bg-red-500 hover:bg-red-600'
+              }`}
+          >
+            <Save className="w-5 h-5" />
+            {editingTransaction ? 'บันทึกการแก้ไข' : 'บันทึกรายการ'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Project Modal
+const ProjectModal = ({ isOpen, onClose, onSave, editingProject }) => {
+  const [name, setName] = useState('');
+  const [client, setClient] = useState('');
+  const [status, setStatus] = useState('in_progress');
+
+  useEffect(() => {
+    if (editingProject) {
+      setName(editingProject.name);
+      setClient(editingProject.client);
+      setStatus(editingProject.status);
+    } else {
+      setName('');
+      setClient('');
+      setStatus('in_progress');
+    }
+  }, [editingProject]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      id: editingProject?.id || generateId('P'),
+      name,
+      client,
+      status
+    });
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">
+            {editingProject ? 'แก้ไขโปรเจกต์' : 'เพิ่มโปรเจกต์ใหม่'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ชื่อโปรเจกต์</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="เช่น ติดตั้งกล้อง บ้านคุณ..."
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ลูกค้า</label>
+            <input
+              type="text"
+              value={client}
+              onChange={(e) => setClient(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="ชื่อลูกค้า / บริษัท"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">สถานะ</label>
+            <div className="flex gap-2">
+              {[
+                { value: 'in_progress', label: 'กำลังดำเนินการ', color: 'yellow' },
+                { value: 'completed', label: 'เสร็จสิ้น', color: 'emerald' },
+              ].map(s => (
+                <button
+                  key={s.value}
+                  type="button"
+                  onClick={() => setStatus(s.value)}
+                  className={`flex-1 py-2 rounded-lg font-medium transition ${status === s.value
+                    ? s.color === 'emerald'
+                      ? 'bg-emerald-500 text-white'
+                      : 'bg-yellow-500 text-white'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+          >
+            <Save className="w-5 h-5" />
+            บันทึก
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Settings Modal
+const SettingsModal = ({
+  isOpen,
+  onClose,
+  scriptUrl,
+  onSaveScriptUrl,
+  geminiApiKey,
+  onSaveGeminiKey,
+  isConnected,
+  isLoading,
+  isSyncing,
+  lastSync,
+  error,
+  pendingActions,
+  onTestConnection,
+  onSyncPending,
+  onFetchData,
+  onBulkImport,
+  currentData,
+  supabaseConfig,
+  onSaveSupabaseConfig
+}) => {
+  const [tempUrl, setTempUrl] = useState(scriptUrl);
+  const [tempGeminiKey, setTempGeminiKey] = useState(geminiApiKey);
+  const [showImportConfirm, setShowImportConfirm] = useState(false);
+  const [supabaseUrl, setSupabaseUrl] = useState(supabaseConfig?.url || '');
+  const [supabaseKey, setSupabaseKey] = useState(supabaseConfig?.anonKey || '');
+
+  useEffect(() => {
+    setTempUrl(scriptUrl);
+    setTempGeminiKey(geminiApiKey);
+    if (supabaseConfig) {
+      setSupabaseUrl(supabaseConfig.url || '');
+      setSupabaseKey(supabaseConfig.anonKey || '');
+    }
+  }, [scriptUrl, geminiApiKey, isOpen, supabaseConfig]);
+
+  const handleSaveUrl = async () => {
+    onSaveScriptUrl(tempUrl);
+    if (tempUrl) {
+      const connected = await onTestConnection();
+      if (connected) {
+        onFetchData();
+      }
+    }
+  };
+
+  const handleImportData = async () => {
+    if (!isConnected) return;
+    await onBulkImport(currentData);
+    setShowImportConfirm(false);
+    onFetchData();
+  };
+
+  const handleSaveSupabase = () => {
+    onSaveSupabaseConfig(supabaseUrl, supabaseKey);
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-auto">
+        <div className="sticky top-0 bg-white p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            ตั้งค่า
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-6">
+          {/* Supabase Config */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Database className="w-4 h-4 inline mr-1" />
+              Supabase Config
+            </label>
+            <div className="space-y-2">
+              <input
+                type="url"
+                value={supabaseUrl}
+                onChange={(e) => setSupabaseUrl(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
+                placeholder="Supabase URL"
+              />
+              <input
+                type="password"
+                value={supabaseKey}
+                onChange={(e) => setSupabaseKey(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
+                placeholder="Supabase Anon Key"
+              />
+              <button
+                onClick={handleSaveSupabase}
+                className="w-full py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition flex items-center justify-center gap-2"
+              >
+                <Check className="w-4 h-4" />
+                บันทึก Supabase Config
+              </button>
+            </div>
+          </div>
+
+          {/* Google Sheets Connection Status */}
+          <div className="bg-gray-50 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-700">สถานะ Google Sheets</span>
+              <div className="flex items-center gap-2">
+                {isLoading || isSyncing ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                ) : isConnected ? (
+                  <Cloud className="w-4 h-4 text-emerald-500" />
+                ) : (
+                  <CloudOff className="w-4 h-4 text-gray-400" />
+                )}
+                <span className={`text-sm font-medium ${isConnected ? 'text-emerald-600' : 'text-gray-500'}`}>
+                  {isLoading ? 'กำลังเชื่อมต่อ...' : isSyncing ? 'กำลัง Sync...' : isConnected ? 'เชื่อมต่อแล้ว' : 'Offline Mode'}
+                </span>
+              </div>
+            </div>
+
+            {lastSync && (
+              <p className="text-xs text-gray-500">
+                Sync ล่าสุด: {lastSync.toLocaleString('th-TH')}
+              </p>
+            )}
+
+            {pendingActions.length > 0 && (
+              <div className="mt-2 flex items-center justify-between">
+                <span className="text-xs text-yellow-600">
+                  รอ Sync: {pendingActions.length} รายการ
+                </span>
+                <button
+                  onClick={onSyncPending}
+                  disabled={!isConnected || isSyncing}
+                  className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1 disabled:opacity-50"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Sync Now
+                </button>
+              </div>
+            )}
+
+            {error && (
+              <p className="text-xs text-red-500 mt-2">{error}</p>
+            )}
+          </div>
+
+          {/* Google Script URL */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Database className="w-4 h-4 inline mr-1" />
+              Google Apps Script URL
+            </label>
+            <div className="space-y-2">
+              <input
+                type="url"
+                value={tempUrl}
+                onChange={(e) => setTempUrl(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
+                placeholder="https://script.google.com/macros/s/.../exec"
+              />
+              <button
+                onClick={handleSaveUrl}
+                disabled={isLoading}
+                className="w-full py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+                บันทึกและทดสอบการเชื่อมต่อ
+              </button>
+            </div>
+          </div>
+
+          {/* Gemini API Key */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              <Camera className="w-4 h-4 inline mr-1" />
+              Gemini API Key (สำหรับ OCR)
+            </label>
+            <input
+              type="password"
+              value={tempGeminiKey}
+              onChange={(e) => {
+                setTempGeminiKey(e.target.value);
+                onSaveGeminiKey(e.target.value);
+              }}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
+              placeholder="AIza..."
+            />
+            <p className="text-xs text-gray-500 mt-2">
+              ใช้สำหรับสแกนใบเสร็จอัตโนมัติ
+            </p>
+          </div>
+
+          {/* Data Actions */}
+          {isConnected && (
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-3">จัดการข้อมูล</h3>
+              <div className="space-y-2">
+                <button
+                  onClick={onFetchData}
+                  disabled={isLoading}
+                  className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  ดึงข้อมูลจาก Google Sheets
+                </button>
+
+                {!showImportConfirm ? (
+                  <button
+                    onClick={() => setShowImportConfirm(true)}
+                    className="w-full py-2 bg-yellow-50 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-100 transition"
+                  >
+                    ส่งข้อมูลปัจจุบันไป Google Sheets
+                  </button>
+                ) : (
+                  <div className="bg-yellow-50 rounded-lg p-3">
+                    <p className="text-sm text-yellow-700 mb-2">
+                      ข้อมูลปัจจุบันจะถูกเพิ่มไปยัง Google Sheets (ไม่ลบข้อมูลเดิม)
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleImportData}
+                        className="flex-1 py-2 bg-yellow-500 text-white rounded-lg text-sm font-medium"
+                      >
+                        ยืนยัน
+                      </button>
+                      <button
+                        onClick={() => setShowImportConfirm(false)}
+                        className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
+                      >
+                        ยกเลิก
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Instructions */}
+          <div className="bg-indigo-50 rounded-xl p-4">
+            <h3 className="text-sm font-medium text-indigo-800 mb-2">วิธีตั้งค่า Google Sheets</h3>
+            <ol className="text-xs text-indigo-700 space-y-1 list-decimal list-inside">
+              <li>สร้าง Google Sheet ใหม่</li>
+              <li>สร้าง 5 sheets: Transactions, Projects, Attendance, Advances, Staff</li>
+              <li>ไปที่ Extensions &gt; Apps Script</li>
+              <li>วางโค้ดจากไฟล์ google-apps-script.js</li>
+              <li>Deploy &gt; New deployment &gt; Web app</li>
+              <li>Execute as: Me, Who has access: Anyone</li>
+              <li>Copy URL มาใส่ด้านบน</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Advance Payment Modal (Owner adds for staff)
+const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
+  const [staffId, setStaffId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const month = date.substring(0, 7);
+    onSave({
+      id: generateId('A'),
+      staffId,
+      amount: parseFloat(amount),
+      description,
+      date,
+      month
+    });
+    setStaffId('');
+    setAmount('');
+    setDescription('');
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">บันทึกเงินเบิกล่วงหน้า</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">พนักงาน</label>
+            <select
+              value={staffId}
+              onChange={(e) => setStaffId(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              required
+            >
+              <option value="">-- เลือกพนักงาน --</option>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">จำนวนเงิน</label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="0"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">หมายเหตุ</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="เช่น เบิกล่วงหน้า"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">วันที่</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition"
+          >
+            บันทึก
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Owner Dashboard
+const OwnerDashboard = ({ transactions, projects }) => {
+  const stats = useMemo(() => {
+    const totalIncome = transactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const totalExpense = transactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const profit = totalIncome - totalExpense;
+    const activeProjects = projects.filter(p => p.status === 'in_progress').length;
+
+    return { totalIncome, totalExpense, profit, activeProjects };
+  }, [transactions, projects]);
+
+  return (
+    <div className="space-y-6">
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatsCard
+          title="รายรับรวม"
+          value={formatCurrency(stats.totalIncome)}
+          icon={TrendingUp}
+          color="emerald"
+        />
+        <StatsCard
+          title="รายจ่ายรวม"
+          value={formatCurrency(stats.totalExpense)}
+          icon={TrendingDown}
+          color="red"
+        />
+        <StatsCard
+          title="กำไรสุทธิ"
+          value={formatCurrency(stats.profit)}
+          icon={Wallet}
+          color={stats.profit >= 0 ? 'emerald' : 'red'}
+        />
+        <StatsCard
+          title="โปรเจกต์"
+          value={stats.activeProjects}
+          subtitle="กำลังดำเนินการ"
+          icon={Briefcase}
+          color="indigo"
+        />
+      </div>
+
+      {/* Recent Transactions */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <Receipt className="w-5 h-5 text-indigo-500" />
+          รายการล่าสุด
+        </h3>
+        <div className="space-y-2">
+          {transactions.slice(-5).reverse().map(t => (
+            <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+              <div>
+                <p className="font-medium text-gray-800 text-sm">{t.description || t.category}</p>
+                <p className="text-xs text-gray-500">{formatDate(t.date)}</p>
+              </div>
+              <span className={`font-semibold ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Owner Transactions List
+const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, filterProject, setFilterProject }) => {
+  const filteredTransactions = useMemo(() => {
+    let filtered = transactions;
+    if (filterProject) {
+      filtered = filtered.filter(t => t.projectId === filterProject);
+    }
+    return filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [transactions, filterProject]);
+
+  const getProjectName = (projectId) => {
+    const project = projects.find(p => p.id === projectId);
+    return project?.name || 'ไม่ระบุ';
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">รายการทั้งหมด</h2>
+        <button
+          onClick={onAdd}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          เพิ่ม
+        </button>
+      </div>
+
+      {/* Filter */}
+      <select
+        value={filterProject}
+        onChange={(e) => setFilterProject(e.target.value)}
+        className="w-full px-4 py-2 border border-gray-300 rounded-xl text-sm"
+      >
+        <option value="">ทุกโปรเจกต์</option>
+        {projects.map(p => (
+          <option key={p.id} value={p.id}>{p.name}</option>
+        ))}
+      </select>
+
+      {/* Transactions List */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+        {filteredTransactions.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">
+            <Receipt className="w-12 h-12 mx-auto mb-2 opacity-50" />
+            <p>ไม่มีรายการ</p>
+          </div>
+        ) : (
+          filteredTransactions.map((t, index) => (
+            <div
+              key={t.id}
+              className={`p-4 flex items-center justify-between ${index !== filteredTransactions.length - 1 ? 'border-b border-gray-100' : ''}`}
+            >
+              <div className="flex-1">
+                <p className="font-medium text-gray-800">{t.description || t.category}</p>
+                <p className="text-xs text-gray-500">{formatDate(t.date)} - {getProjectName(t.projectId)}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`font-semibold ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                </span>
+                <button
+                  onClick={() => onEdit(t)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition"
+                >
+                  <Edit3 className="w-4 h-4 text-gray-500" />
+                </button>
+                <button
+                  onClick={() => onDelete(t.id)}
+                  className="p-2 hover:bg-red-50 rounded-lg transition"
+                >
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Owner Projects
+const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
+  const projectStats = useMemo(() => {
+    return projects.map(p => {
+      const projectTransactions = transactions.filter(t => t.projectId === p.id);
+      const income = projectTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+      const expense = projectTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+      return { ...p, income, expense, profit: income - expense };
+    });
+  }, [projects, transactions]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">โปรเจกต์</h2>
+        <button
+          onClick={onAdd}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          เพิ่ม
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {projectStats.map(p => (
+          <div
+            key={p.id}
+            onClick={() => onEdit(p)}
+            className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition"
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h3 className="font-semibold text-gray-800">{p.name}</h3>
+                <p className="text-sm text-gray-500">{p.client}</p>
+              </div>
+              <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'
+                }`}>
+                {p.status === 'completed' ? 'เสร็จสิ้น' : 'กำลังดำเนินการ'}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-sm">
+              <div>
+                <p className="text-gray-500">รายรับ</p>
+                <p className="font-semibold text-emerald-600">{formatCurrency(p.income)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">รายจ่าย</p>
+                <p className="font-semibold text-red-600">{formatCurrency(p.expense)}</p>
+              </div>
+              <div>
+                <p className="text-gray-500">กำไร</p>
+                <p className={`font-semibold ${p.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {formatCurrency(p.profit)}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Password Reset Modal
+const PasswordResetModal = ({ isOpen, onClose, staff, onReset }) => {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (newPassword.length < 4) {
+      setError('รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('รหัสผ่านไม่ตรงกัน');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onReset(staff.id, newPassword);
+      setSuccess(true);
+      setNewPassword('');
+      setConfirmPassword('');
+      setTimeout(() => {
+        onClose();
+        setSuccess(false);
+      }, 1500);
+    } catch (err) {
+      setError(err.message || 'เกิดข้อผิดพลาด');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen || !staff) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">ตั้งรหัสผ่านใหม่</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div className="bg-indigo-50 rounded-xl p-3 text-center">
+            <p className="text-sm text-gray-600">ตั้งรหัสผ่านให้</p>
+            <p className="font-bold text-indigo-700">{staff.name}</p>
+            <p className="text-xs text-gray-500">({staff.username})</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">รหัสผ่านใหม่</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="อย่างน้อย 4 ตัวอักษร"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ยืนยันรหัสผ่านใหม่</label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="ใส่รหัสผ่านอีกครั้ง"
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
+              <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm">{error}</span>
+            </div>
+          )}
+
+          {success && (
+            <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 p-3 rounded-lg">
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+              <span className="text-sm">เปลี่ยนรหัสผ่านสำเร็จ!</span>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading || success}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <Check className="w-5 h-5" />
+            )}
+            บันทึกรหัสผ่านใหม่
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Owner Staff Management
+const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onResetPassword }) => {
+  const currentMonth = getCurrentMonth();
+  const [selectedStaff, setSelectedStaff] = useState(null);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+
+  // คำนวณจำนวนวันทำงาน (ไม่รวมเสาร์-อาทิตย์)
+  const calculateWorkingDays = (startDate, endDate) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    let count = 0;
+    const current = new Date(start);
+    while (current <= end) {
+      const dayOfWeek = current.getDay();
+      if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+        count++;
+      }
+      current.setDate(current.getDate() + 1);
+    }
+    return count;
+  };
+
+  const allStaffStats = useMemo(() => {
+    const today = new Date();
+    return staffData
+      .filter(s => s.active !== false)
+      .map(staff => {
+        const monthAttendance = attendance[staff.username]?.[currentMonth] || {
+          workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0
+        };
+        const monthAdvances = advances.filter(a => a.staffId === staff.username && a.month === currentMonth);
+        const totalAdvance = monthAdvances.reduce((sum, a) => sum + a.amount, 0);
+
+        const dailyWage = staff.daily_wage || staff.dailyWage || 0;
+        const grossPay = dailyWage * monthAttendance.workDays;
+        const deductions = (monthAttendance.lateDays * 50) + (monthAttendance.absentDays * 300);
+        const netSalary = grossPay - deductions - totalAdvance;
+
+        // คำนวณรายได้รวมตั้งแต่วันเริ่มงาน
+        const startDate = staff.start_date || staff.startDate || staff.created_at;
+        const workingDaysFromStart = startDate ? calculateWorkingDays(startDate, today) : 0;
+        const totalEarnings = dailyWage * workingDaysFromStart;
+
+        // คำนวณเงินเบิกทั้งหมด (ทุกเดือน)
+        const allTimeAdvances = advances.filter(a => a.staffId === staff.username);
+        const totalAllAdvances = allTimeAdvances.reduce((sum, a) => sum + a.amount, 0);
+
+        // รายได้สุทธิตั้งแต่เริ่มงาน
+        const netTotalEarnings = totalEarnings - totalAllAdvances;
+
+        return {
+          ...staff,
+          dailyWage,
+          attendance: monthAttendance,
+          totalAdvance,
+          grossPay,
+          deductions,
+          netSalary,
+          startDate,
+          workingDaysFromStart,
+          totalEarnings,
+          totalAllAdvances,
+          netTotalEarnings
+        };
+      });
+  }, [staffData, attendance, advances, currentMonth]);
+
+  // คำนวณค่าใช้จ่ายพนักงานรายวันรวม (สำหรับใช้คำนวณต้นทุน)
+  const dailyStaffExpense = useMemo(() => {
+    return allStaffStats
+      .filter(s => s.role === 'staff')
+      .reduce((sum, s) => sum + s.dailyWage, 0);
+  }, [allStaffStats]);
+
+  const handleResetPassword = (staff) => {
+    setSelectedStaff(staff);
+    setShowPasswordModal(true);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-bold text-gray-800">พนักงาน</h2>
+        <button
+          onClick={onAddAdvance}
+          className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-2"
+        >
+          <Plus className="w-4 h-4" />
+          บันทึกเบิก
+        </button>
+      </div>
+
+      {/* สรุปค่าใช้จ่ายพนักงานรายวัน */}
+      <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl p-4 text-white">
+        <p className="text-sm opacity-90">ค่าใช้จ่ายพนักงานต่อวัน (โดยประมาณ)</p>
+        <p className="text-2xl font-bold">{formatCurrency(dailyStaffExpense)}</p>
+        <p className="text-xs opacity-75 mt-1">รวมค่าแรงพนักงานทุกคน/วัน</p>
+      </div>
+
+      <p className="text-sm text-gray-500">เดือน {currentMonth}</p>
+
+      <div className="space-y-3">
+        {allStaffStats.map(staff => (
+          <div key={staff.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="font-semibold text-gray-800">{staff.name}</h3>
+                <p className="text-sm text-gray-500">
+                  {staff.role === 'owner' ? 'เจ้าของกิจการ' : `ค่าแรง/วัน: ${formatCurrency(staff.dailyWage)}`}
+                </p>
+                <p className="text-xs text-gray-400">@{staff.username}</p>
+                {staff.role === 'staff' && staff.startDate && (
+                  <p className="text-xs text-gray-400">
+                    เริ่มงาน: {formatDate(staff.startDate)} ({staff.workingDaysFromStart} วันทำงาน)
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {staff.role === 'staff' && (
+                  <span className="text-lg font-bold text-emerald-600">{formatCurrency(staff.netSalary)}</span>
+                )}
+                <button
+                  onClick={() => handleResetPassword(staff)}
+                  className="p-2 hover:bg-indigo-50 rounded-lg transition"
+                  title="ตั้งรหัสผ่านใหม่"
+                >
+                  <Lock className="w-4 h-4 text-indigo-500" />
+                </button>
+              </div>
+            </div>
+            {staff.role === 'staff' && (
+              <>
+                {/* รายได้รวมตั้งแต่เริ่มงาน */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 mb-3">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="text-xs text-gray-500">รายได้รวมตั้งแต่เริ่มงาน</p>
+                      <p className="text-lg font-bold text-indigo-600">{formatCurrency(staff.totalEarnings)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">หักเบิกแล้ว</p>
+                      <p className="text-sm font-semibold text-purple-600">-{formatCurrency(staff.totalAllAdvances)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-xs text-gray-500">คงเหลือสุทธิ</p>
+                      <p className={`text-lg font-bold ${staff.netTotalEarnings >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {formatCurrency(staff.netTotalEarnings)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {/* สถิติเดือนนี้ */}
+                <p className="text-xs text-gray-400 mb-2">สถิติเดือนนี้</p>
+                <div className="grid grid-cols-4 gap-2 text-xs">
+                  <div className="bg-emerald-50 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-emerald-600">{staff.attendance.workDays}</p>
+                    <p className="text-gray-500">วันทำงาน</p>
+                  </div>
+                  <div className="bg-yellow-50 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-yellow-600">{staff.attendance.lateDays}</p>
+                    <p className="text-gray-500">สาย</p>
+                  </div>
+                  <div className="bg-red-50 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-red-600">{staff.attendance.absentDays}</p>
+                    <p className="text-gray-500">ขาด</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-purple-600">{formatCurrency(staff.totalAdvance)}</p>
+                    <p className="text-gray-500">เบิกเดือนนี้</p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <PasswordResetModal
+        isOpen={showPasswordModal}
+        onClose={() => {
+          setShowPasswordModal(false);
+          setSelectedStaff(null);
+        }}
+        staff={selectedStaff}
+        onReset={onResetPassword}
+      />
+
+      <div className="bg-indigo-50 rounded-xl p-4 mt-4">
+        <p className="text-sm text-indigo-700 font-medium mb-1">จัดการผู้ใช้ผ่าน Supabase Dashboard</p>
+        <ul className="text-xs text-indigo-600 space-y-1 list-disc list-inside">
+          <li>เพิ่ม/ลบ user: Authentication &gt; Users</li>
+          <li>เปลี่ยนรหัสผ่าน: คลิก ⋮ ข้าง user &gt; Reset password</li>
+          <li>แก้ไขข้อมูล: Table Editor &gt; profiles</li>
+        </ul>
+      </div>
+    </div>
+  );
+};
+
+// Staff Dashboard
+const StaffDashboard = ({ user, attendance, advances, staffData }) => {
+  const currentMonth = getCurrentMonth();
+
+  const stats = useMemo(() => {
+    const username = user.profile?.username || user.email?.split('@')[0];
+    const monthAttendance = attendance[username]?.[currentMonth] || {
+      workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0
+    };
+    const monthAdvances = advances.filter(a => a.staffId === username && a.month === currentMonth);
+    const totalAdvance = monthAdvances.reduce((sum, a) => sum + a.amount, 0);
+
+    const staffInfo = staffData.find(s => s.username === username || s.id === user.id);
+    const dailyWage = staffInfo?.daily_wage || staffInfo?.dailyWage || user.profile?.daily_wage || 0;
+    const grossPay = dailyWage * monthAttendance.workDays;
+    const deductions = (monthAttendance.lateDays * 50) + (monthAttendance.absentDays * 300);
+    const netSalary = grossPay - deductions - totalAdvance;
+    const remainingAdvance = Math.max(0, grossPay * 0.5 - totalAdvance);
+
+    return {
+      dailyWage,
+      grossPay,
+      attendance: monthAttendance,
+      advances: monthAdvances,
+      totalAdvance,
+      deductions,
+      netSalary,
+      remainingAdvance
+    };
+  }, [user, attendance, advances, staffData, currentMonth]);
+
+  const displayName = user.profile?.name || user.email?.split('@')[0] || 'พนักงาน';
+
+  return (
+    <div className="space-y-6">
+      {/* Greeting */}
+      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 text-white">
+        <p className="text-emerald-100">สวัสดี,</p>
+        <h2 className="text-2xl font-bold">{displayName}</h2>
+        <p className="text-emerald-100 text-sm mt-1">เดือน {currentMonth}</p>
+      </div>
+
+      {/* Salary Stats */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatsCard
+          title="ค่าแรง/วัน"
+          value={formatCurrency(stats.dailyWage)}
+          icon={Wallet}
+          color="emerald"
+        />
+        <StatsCard
+          title="รับจริง"
+          value={formatCurrency(stats.netSalary)}
+          icon={DollarSign}
+          color={stats.netSalary > 0 ? 'emerald' : 'red'}
+        />
+        <StatsCard
+          title="เบิกไปแล้ว"
+          value={formatCurrency(stats.totalAdvance)}
+          icon={CreditCard}
+          color="purple"
+        />
+        <StatsCard
+          title="เบิกได้อีก"
+          value={formatCurrency(stats.remainingAdvance)}
+          subtitle="(ไม่เกิน 50%)"
+          icon={ArrowUpRight}
+          color="indigo"
+        />
+      </div>
+
+      {/* Attendance Summary */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <Calendar className="w-5 h-5 text-emerald-500" />
+          สรุปการทำงานเดือนนี้
+        </h3>
+        <div className="grid grid-cols-4 gap-2">
+          <div className="bg-emerald-50 rounded-xl p-3 text-center">
+            <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-emerald-600">{stats.attendance.workDays}</p>
+            <p className="text-xs text-gray-500">วันทำงาน</p>
+          </div>
+          <div className="bg-yellow-50 rounded-xl p-3 text-center">
+            <Clock className="w-6 h-6 text-yellow-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-yellow-600">{stats.attendance.lateDays}</p>
+            <p className="text-xs text-gray-500">มาสาย</p>
+            <p className="text-xs text-red-500">-{stats.attendance.lateDays * 50}B</p>
+          </div>
+          <div className="bg-red-50 rounded-xl p-3 text-center">
+            <XCircle className="w-6 h-6 text-red-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-red-600">{stats.attendance.absentDays}</p>
+            <p className="text-xs text-gray-500">ขาดงาน</p>
+            <p className="text-xs text-red-500">-{stats.attendance.absentDays * 300}B</p>
+          </div>
+          <div className="bg-blue-50 rounded-xl p-3 text-center">
+            <Calendar className="w-6 h-6 text-blue-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-blue-600">{stats.attendance.leaveDays}</p>
+            <p className="text-xs text-gray-500">ลางาน</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Salary Breakdown */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+          <Receipt className="w-5 h-5 text-emerald-500" />
+          สรุปเงินเดือน
+        </h3>
+        <div className="space-y-2">
+          <div className="flex justify-between py-2 border-b border-gray-100">
+            <span className="text-gray-600">ค่าแรง ({stats.attendance.workDays} วัน x {formatCurrency(stats.dailyWage)})</span>
+            <span className="font-medium text-emerald-600">{formatCurrency(stats.grossPay)}</span>
+          </div>
+          <div className="flex justify-between py-2 border-b border-gray-100">
+            <span className="text-gray-600">หักสาย ({stats.attendance.lateDays} วัน x 50B)</span>
+            <span className="text-red-500">-{formatCurrency(stats.attendance.lateDays * 50)}</span>
+          </div>
+          <div className="flex justify-between py-2 border-b border-gray-100">
+            <span className="text-gray-600">หักขาด ({stats.attendance.absentDays} วัน x 300B)</span>
+            <span className="text-red-500">-{formatCurrency(stats.attendance.absentDays * 300)}</span>
+          </div>
+          <div className="flex justify-between py-2 border-b border-gray-100">
+            <span className="text-gray-600">หักเบิกล่วงหน้า</span>
+            <span className="text-red-500">-{formatCurrency(stats.totalAdvance)}</span>
+          </div>
+          <div className="flex justify-between py-3 bg-emerald-50 rounded-lg px-3 -mx-1">
+            <span className="font-semibold text-gray-800">รวมรับจริง</span>
+            <span className="font-bold text-emerald-600 text-lg">{formatCurrency(stats.netSalary)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Staff Attendance History
+const StaffAttendanceHistory = ({ user, attendance }) => {
+  const username = user.profile?.username || user.email?.split('@')[0];
+  const userAttendance = attendance[username] || {};
+  const months = Object.keys(userAttendance).sort().reverse();
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">ประวัติการทำงาน</h2>
+
+      {months.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+          <Calendar className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p>ยังไม่มีข้อมูลการทำงาน</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {months.map(month => {
+            const data = userAttendance[month];
+            return (
+              <div key={month} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+                <h3 className="font-semibold text-gray-800 mb-3">{month}</h3>
+                <div className="grid grid-cols-4 gap-2 text-sm">
+                  <div className="text-center">
+                    <p className="font-bold text-emerald-600">{data.workDays}</p>
+                    <p className="text-xs text-gray-500">ทำงาน</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-yellow-600">{data.lateDays}</p>
+                    <p className="text-xs text-gray-500">สาย</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-red-600">{data.absentDays}</p>
+                    <p className="text-xs text-gray-500">ขาด</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="font-bold text-blue-600">{data.leaveDays}</p>
+                    <p className="text-xs text-gray-500">ลา</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Staff Advances History
+const StaffAdvancesHistory = ({ user, advances }) => {
+  const username = user.profile?.username || user.email?.split('@')[0];
+  const userAdvances = advances.filter(a => a.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const totalAdvances = userAdvances.reduce((sum, a) => sum + a.amount, 0);
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">ประวัติเบิกเงิน</h2>
+
+      {/* Summary */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <p className="text-sm text-gray-500">เบิกไปแล้วทั้งหมด</p>
+        <p className="text-xl font-bold text-purple-600">{formatCurrency(totalAdvances)}</p>
+      </div>
+
+      {/* Advances List */}
+      {userAdvances.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+          <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p>ยังไม่มีประวัติการเบิกเงิน</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          {userAdvances.map((adv, index) => (
+            <div
+              key={adv.id}
+              className={`p-4 flex items-center justify-between ${index !== userAdvances.length - 1 ? 'border-b border-gray-100' : ''}`}
+            >
+              <div>
+                <p className="font-medium text-gray-800">{adv.description || 'เบิกเงินล่วงหน้า'}</p>
+                <p className="text-xs text-gray-500">{formatDate(adv.date)} - เดือน {adv.month}</p>
+              </div>
+              <span className="text-red-500 font-semibold">-{formatCurrency(adv.amount)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ================== MAIN APP ==================
+const AppContent = () => {
+  // Auth State
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isSupabaseReady, setIsSupabaseReady] = useState(false);
+
+  // Data State
+  const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
+  const [projects, setProjects] = useState(INITIAL_PROJECTS);
+  const [attendance, setAttendance] = useState(INITIAL_ATTENDANCE);
+  const [advances, setAdvances] = useState(INITIAL_ADVANCES);
+  const [staffData, setStaffData] = useState([]);
+  const [dataLoaded, setDataLoaded] = useState(false);
+
+  // UI State
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [showProjectModal, setShowProjectModal] = useState(false);
+  const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [editingProject, setEditingProject] = useState(null);
+  const [filterProject, setFilterProject] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+
+  // Google Sheets Integration
+  const googleSheets = useGoogleSheets({
+    transactions: INITIAL_TRANSACTIONS,
+    projects: INITIAL_PROJECTS,
+    attendance: INITIAL_ATTENDANCE,
+    advances: INITIAL_ADVANCES
+  }, isSupabaseReady && user);
+
+  // Check Supabase configuration on mount
+  useEffect(() => {
+    const checkSupabase = () => {
+      const configured = isSupabaseConfigured();
+      setIsSupabaseReady(configured);
+      if (!configured) {
+        setIsAuthLoading(false);
+      }
+    };
+    checkSupabase();
+  }, []);
+
+  // Check session from localStorage
+  useEffect(() => {
+    if (!isSupabaseReady) return;
+
+    const checkSession = async () => {
+      try {
+        const sessionStr = localStorage.getItem('money_tracker_session');
+        if (sessionStr) {
+          const session = JSON.parse(sessionStr);
+          // ตรวจสอบว่า session หมดอายุหรือยัง (8 ชั่วโมง)
+          const SESSION_DURATION = 8 * 60 * 60 * 1000;
+          if (Date.now() - session.loginTime < SESSION_DURATION) {
+            // ดึงข้อมูล profile ล่าสุดจาก database
+            const freshProfile = await getProfileByUsername(session.user.username);
+            if (freshProfile) {
+              setUser(freshProfile);
+              setProfile(freshProfile);
+            }
+          } else {
+            // Session หมดอายุ
+            localStorage.removeItem('money_tracker_session');
+          }
+        }
+      } catch (error) {
+        console.error('Session check error:', error);
+        localStorage.removeItem('money_tracker_session');
+      } finally {
+        setIsAuthLoading(false);
+      }
+    };
+
+    checkSession();
+  }, [isSupabaseReady]);
+
+  // Load profiles as staff data
+  useEffect(() => {
+    const loadProfiles = async () => {
+      if (!isSupabaseReady || !user) return;
+
+      try {
+        const profiles = await getAllProfiles();
+        if (profiles && profiles.length > 0) {
+          setStaffData(profiles.map(p => ({
+            id: p.id,
+            username: p.username,
+            name: p.name,
+            role: p.role,
+            dailyWage: p.daily_wage,
+            daily_wage: p.daily_wage,
+            phone: p.phone,
+            startDate: p.start_date,
+            active: p.active
+          })));
+        }
+      } catch (error) {
+        console.error('Error loading profiles:', error);
+      }
+    };
+
+    loadProfiles();
+  }, [isSupabaseReady, user]);
+
+  // Load data from Google Sheets
+  useEffect(() => {
+    const loadData = async () => {
+      if (googleSheets.scriptUrl && !dataLoaded && user) {
+        const data = await googleSheets.fetchAllData();
+        if (data) {
+          if (data.transactions?.length > 0) setTransactions(data.transactions);
+          if (data.projects?.length > 0) setProjects(data.projects);
+          if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
+          if (data.advances?.length > 0) setAdvances(data.advances);
+          setDataLoaded(true);
+        }
+      }
+    };
+    loadData();
+  }, [googleSheets.scriptUrl, user]);
+
+  // Load Gemini API Key from database
+  useEffect(() => {
+    if (!isSupabaseReady || !user) return;
+    const loadGeminiKey = async () => {
+      try {
+        const key = await getGeminiApiKey();
+        if (key) {
+          setGeminiApiKey(key);
+        }
+      } catch (err) {
+        console.error('Error loading Gemini API Key:', err);
+      }
+    };
+    loadGeminiKey();
+  }, [isSupabaseReady, user]);
+
+  // Handlers
+  const handleLogin = async (profileData) => {
+    console.log('Login profile:', profileData);
+    setUser(profileData);
+    setProfile(profileData);
+    setIsAuthLoading(false);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('money_tracker_session');
+    setUser(null);
+    setProfile(null);
+    setCurrentPage('dashboard');
+  };
+
+  const handleSupabaseSetupComplete = () => {
+    setIsSupabaseReady(true);
+    setIsAuthLoading(false);
+  };
+
+  const handleSaveGeminiKey = useCallback(async (key) => {
+    setGeminiApiKey(key);
+    try {
+      await saveGeminiApiKey(key);
+    } catch (err) {
+      console.error('Error saving Gemini API Key:', err);
+    }
+  }, []);
+
+  const handleFetchData = useCallback(async () => {
+    const data = await googleSheets.fetchAllData();
+    if (data) {
+      if (data.transactions?.length > 0) setTransactions(data.transactions);
+      if (data.projects?.length > 0) setProjects(data.projects);
+      if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
+      if (data.advances?.length > 0) setAdvances(data.advances);
+    }
+  }, [googleSheets]);
+
+  const handleBulkImport = useCallback(async () => {
+    return googleSheets.bulkImport({
+      transactions,
+      projects,
+      attendance,
+      advances
+    });
+  }, [googleSheets, transactions, projects, attendance, advances]);
+
+  const handleSaveTransaction = async (transaction) => {
+    const isNew = !editingTransaction;
+
+    if (isNew) {
+      setTransactions(prev => [...prev, transaction]);
+    } else {
+      setTransactions(prev => prev.map(t => t.id === transaction.id ? transaction : t));
+    }
+    setEditingTransaction(null);
+
+    await googleSheets.saveTransaction(transaction, isNew);
+  };
+
+  const handleDeleteTransaction = async (id) => {
+    if (confirm('ต้องการลบรายการนี้?')) {
+      setTransactions(prev => prev.filter(t => t.id !== id));
+      await googleSheets.deleteTransaction(id);
+    }
+  };
+
+  const handleSaveProject = async (project) => {
+    const isNew = !editingProject;
+
+    if (isNew) {
+      setProjects(prev => [...prev, project]);
+    } else {
+      setProjects(prev => prev.map(p => p.id === project.id ? project : p));
+    }
+    setEditingProject(null);
+
+    await googleSheets.saveProject(project, isNew);
+  };
+
+  const handleSaveAdvance = async (advance) => {
+    setAdvances(prev => [...prev, advance]);
+    await googleSheets.saveAdvance(advance);
+  };
+
+  const handleResetPassword = async (userId, newPassword) => {
+    await resetUserPassword(userId, newPassword);
+  };
+
+  const handleSaveSupabaseConfig = (url, key) => {
+    saveSupabaseConfig(url, key);
+    resetSupabaseInstance();
+  };
+
+  // Autocomplete suggestions
+  const descriptionSuggestions = useMemo(() => {
+    const descriptions = transactions.map(t => t.description).filter(Boolean);
+    return [...new Set(descriptions)];
+  }, [transactions]);
+
+  // Staff list for owner
+  const staffList = useMemo(() => {
+    return staffData
+      .filter(s => s.active !== false && s.role !== 'owner')
+      .map(s => ({ id: s.username || s.id, name: s.name }));
+  }, [staffData]);
+
+  // Show Supabase setup if not configured
+  if (!isSupabaseReady) {
+    return <SupabaseSetupScreen onSetupComplete={handleSupabaseSetupComplete} />;
+  }
+
+  // Show loading while checking auth
+  if (isAuthLoading) {
+    return <LoadingScreen />;
+  }
+
+  // Show login if not authenticated
+  if (!user) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  const isOwner = profile?.role === 'owner';
+  const themeColor = isOwner ? 'indigo' : 'emerald';
+
+  // Navigation items
+  const navItems = isOwner
+    ? [
+      { id: 'dashboard', icon: Home, label: 'หน้าหลัก' },
+      { id: 'transactions', icon: Receipt, label: 'รายการ' },
+      { id: 'projects', icon: Briefcase, label: 'โปรเจกต์' },
+      { id: 'staff', icon: Users, label: 'พนักงาน' },
+    ]
+    : [
+      { id: 'dashboard', icon: Home, label: 'หน้าหลัก' },
+      { id: 'attendance', icon: Calendar, label: 'การทำงาน' },
+      { id: 'advances', icon: CreditCard, label: 'เบิกเงิน' },
+    ];
+
+  const userWithProfile = { ...user, profile };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className={`bg-gradient-to-r ${isOwner ? 'from-indigo-600 to-purple-600' : 'from-emerald-600 to-teal-600'} text-white p-4 sticky top-0 z-40`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Wallet className="w-6 h-6" />
+            <div>
+              <h1 className="font-bold">Money Tracker Pro</h1>
+              <div className="flex items-center gap-2">
+                <p className="text-xs opacity-80">{isOwner ? 'เจ้าของกิจการ' : 'พนักงาน'}</p>
+                {isOwner && (
+                  googleSheets.isConnected ? (
+                    <Cloud className="w-3 h-3 text-emerald-300" />
+                  ) : googleSheets.isSyncing ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <CloudOff className="w-3 h-3 opacity-50" />
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {isOwner && googleSheets.pendingActions.length > 0 && (
+              <span className="bg-yellow-400 text-yellow-900 text-xs px-2 py-0.5 rounded-full">
+                {googleSheets.pendingActions.length}
+              </span>
+            )}
+            {isOwner && (
+              <button
+                onClick={() => setShowSettingsModal(true)}
+                className="p-2 hover:bg-white/20 rounded-lg transition"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            )}
+            <button
+              onClick={handleLogout}
+              className="p-2 hover:bg-white/20 rounded-lg transition"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content */}
+      <main className="p-4 pb-24">
+        {isOwner ? (
+          <>
+            {currentPage === 'dashboard' && (
+              <OwnerDashboard transactions={transactions} projects={projects} />
+            )}
+            {currentPage === 'transactions' && (
+              <OwnerTransactions
+                transactions={transactions}
+                projects={projects}
+                onAdd={() => {
+                  setEditingTransaction(null);
+                  setShowTransactionModal(true);
+                }}
+                onEdit={(t) => {
+                  setEditingTransaction(t);
+                  setShowTransactionModal(true);
+                }}
+                onDelete={handleDeleteTransaction}
+                filterProject={filterProject}
+                setFilterProject={setFilterProject}
+              />
+            )}
+            {currentPage === 'projects' && (
+              <OwnerProjects
+                projects={projects}
+                transactions={transactions}
+                onAdd={() => {
+                  setEditingProject(null);
+                  setShowProjectModal(true);
+                }}
+                onEdit={(p) => {
+                  setEditingProject(p);
+                  setShowProjectModal(true);
+                }}
+              />
+            )}
+            {currentPage === 'staff' && (
+              <OwnerStaff
+                staffData={staffData}
+                attendance={attendance}
+                advances={advances}
+                onAddAdvance={() => setShowAdvanceModal(true)}
+                onResetPassword={handleResetPassword}
+              />
+            )}
+          </>
+        ) : (
+          <>
+            {currentPage === 'dashboard' && (
+              <StaffDashboard
+                user={userWithProfile}
+                attendance={attendance}
+                advances={advances}
+                staffData={staffData}
+              />
+            )}
+            {currentPage === 'attendance' && (
+              <StaffAttendanceHistory
+                user={userWithProfile}
+                attendance={attendance}
+              />
+            )}
+            {currentPage === 'advances' && (
+              <StaffAdvancesHistory
+                user={userWithProfile}
+                advances={advances}
+              />
+            )}
+          </>
+        )}
+      </main>
+
+      {/* Bottom Navigation */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2 z-40">
+        <div className="flex justify-around">
+          {navItems.map(item => (
+            <button
+              key={item.id}
+              onClick={() => setCurrentPage(item.id)}
+              className={`flex flex-col items-center py-2 px-4 rounded-lg transition ${currentPage === item.id
+                ? isOwner
+                  ? 'text-indigo-600 bg-indigo-50'
+                  : 'text-emerald-600 bg-emerald-50'
+                : 'text-gray-400 hover:text-gray-600'
+                }`}
+            >
+              <item.icon className="w-5 h-5" />
+              <span className="text-xs mt-1">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      {/* Floating Action Button (Owner only) */}
+      {isOwner && currentPage === 'dashboard' && (
+        <button
+          onClick={() => {
+            setEditingTransaction(null);
+            setShowTransactionModal(true);
+          }}
+          className="fixed right-4 bottom-20 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-indigo-700 transition z-30"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
+
+      {/* Modals */}
+      <TransactionModal
+        isOpen={showTransactionModal}
+        onClose={() => {
+          setShowTransactionModal(false);
+          setEditingTransaction(null);
+        }}
+        onSave={handleSaveTransaction}
+        projects={projects}
+        suggestions={descriptionSuggestions}
+        geminiApiKey={geminiApiKey}
+        setGeminiApiKey={handleSaveGeminiKey}
+        editingTransaction={editingTransaction}
+      />
+
+      <ProjectModal
+        isOpen={showProjectModal}
+        onClose={() => {
+          setShowProjectModal(false);
+          setEditingProject(null);
+        }}
+        onSave={handleSaveProject}
+        editingProject={editingProject}
+      />
+
+      <AdvanceModal
+        isOpen={showAdvanceModal}
+        onClose={() => setShowAdvanceModal(false)}
+        onSave={handleSaveAdvance}
+        staffList={staffList}
+      />
+
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        scriptUrl={googleSheets.scriptUrl}
+        onSaveScriptUrl={googleSheets.saveScriptUrl}
+        geminiApiKey={geminiApiKey}
+        onSaveGeminiKey={handleSaveGeminiKey}
+        isConnected={googleSheets.isConnected}
+        isLoading={googleSheets.isLoading}
+        isSyncing={googleSheets.isSyncing}
+        lastSync={googleSheets.lastSync}
+        error={googleSheets.error}
+        pendingActions={googleSheets.pendingActions}
+        onTestConnection={googleSheets.testConnection}
+        onSyncPending={googleSheets.syncPendingActions}
+        onFetchData={handleFetchData}
+        onBulkImport={handleBulkImport}
+        currentData={{ transactions, projects, attendance, advances }}
+        supabaseConfig={getSupabaseConfig()}
+        onSaveSupabaseConfig={handleSaveSupabaseConfig}
+      />
+    </div>
+  );
+};
+
+const App = () => {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+};
+
+export default App;
