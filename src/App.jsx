@@ -633,6 +633,8 @@ const TransactionModal = ({
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState('');
   const [showApiKeyInput, setShowApiKeyInput] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [pendingTransaction, setPendingTransaction] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -695,7 +697,7 @@ const TransactionModal = ({
     e.preventDefault();
     if (!amount || !category || !projectId) return;
 
-    onSave({
+    setPendingTransaction({
       id: editingTransaction?.id || generateId('T'),
       type,
       amount: parseFloat(amount),
@@ -705,9 +707,22 @@ const TransactionModal = ({
       date,
       createdBy: 'admin'
     });
+    setShowConfirm(true);
+  };
 
+  const handleConfirmSave = () => {
+    if (pendingTransaction) {
+      onSave(pendingTransaction);
+    }
+    setShowConfirm(false);
+    setPendingTransaction(null);
     resetForm();
     onClose();
+  };
+
+  const handleCancelConfirm = () => {
+    setShowConfirm(false);
+    setPendingTransaction(null);
   };
 
   if (!isOpen) return null;
@@ -837,7 +852,7 @@ const TransactionModal = ({
               required
             >
               <option value="">-- เลือกโปรเจกต์ --</option>
-              {projects.filter(p => p.status !== 'completed').map(p => (
+              {[...projects].filter(p => p.status !== 'completed').reverse().map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
@@ -901,6 +916,60 @@ const TransactionModal = ({
           </button>
         </form>
       </div>
+
+      {/* Confirmation Popup */}
+      {showConfirm && pendingTransaction && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={handleCancelConfirm}>
+          <div className="bg-white rounded-2xl p-5 mx-4 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold text-gray-800 text-lg mb-3">ยืนยันการบันทึก</h3>
+            <div className="bg-gray-50 rounded-xl p-3 space-y-2 mb-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">ประเภท</span>
+                <span className={`font-medium ${pendingTransaction.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {pendingTransaction.type === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">จำนวน</span>
+                <span className="font-semibold">{formatCurrency(pendingTransaction.amount)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">หมวดหมู่</span>
+                <span>{pendingTransaction.category}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">งาน</span>
+                <span>{projects.find(p => p.id === pendingTransaction.projectId)?.name || '-'}</span>
+              </div>
+              {pendingTransaction.description && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">รายละเอียด</span>
+                  <span className="text-right max-w-[60%]">{pendingTransaction.description}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">วันที่</span>
+                <span>{formatDate(pendingTransaction.date)}</span>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCancelConfirm}
+                className="flex-1 py-3 border border-gray-300 text-gray-700 rounded-xl font-medium hover:bg-gray-50 transition"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={handleConfirmSave}
+                className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2"
+              >
+                <Check className="w-5 h-5" />
+                ยืนยัน
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -1530,6 +1599,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
 const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances }) => {
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState('all'); // custom, week, month, all
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
@@ -1777,20 +1847,99 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           <p className="text-sm text-gray-400 text-center py-4">ไม่มีรายการในช่วงนี้</p>
         ) : (
           <div className="space-y-2">
-            {filteredTransactions.map(t => (
-              <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                <div>
-                  <p className="font-medium text-gray-800 text-sm">{t.description || t.category}</p>
-                  <p className="text-xs text-gray-500">{formatDate(t.date)}</p>
+            {filteredTransactions.map(t => {
+              const projectName = t.projectId ? projects.find(p => p.id === t.projectId)?.name : null;
+              return (
+                <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                  <div>
+                    <p className="font-medium text-gray-800 text-sm">{t.description || t.category}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs text-gray-500">{formatDate(t.date)}</p>
+                      {projectName && (
+                        <button
+                          onClick={() => setSelectedProjectId(t.projectId)}
+                          className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded hover:bg-indigo-100 transition"
+                        >
+                          {projectName}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <span className={`font-semibold ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                  </span>
                 </div>
-                <span className={`font-semibold ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Project Detail Modal */}
+      {selectedProjectId && (() => {
+        const project = projects.find(p => p.id === selectedProjectId);
+        if (!project) return null;
+        const projectTxns = transactions
+          .filter(t => t.projectId === selectedProjectId)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        const totalIncome = projectTxns.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+        const totalExpense = projectTxns.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+        const profit = totalIncome - totalExpense;
+        return (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center" onClick={() => setSelectedProjectId(null)}>
+            <div className="bg-white w-full max-w-lg max-h-[85vh] rounded-t-2xl sm:rounded-2xl flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-gray-100">
+                <div>
+                  <h3 className="font-bold text-gray-800 text-lg">{project.name}</h3>
+                  {project.client && <p className="text-sm text-gray-500">{project.client}</p>}
+                </div>
+                <button onClick={() => setSelectedProjectId(null)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+
+              {/* Summary */}
+              <div className="grid grid-cols-3 gap-2 p-4 border-b border-gray-100">
+                <div className="bg-emerald-50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-gray-500">รายรับ</p>
+                  <p className="font-bold text-emerald-600 text-sm">{formatCurrency(totalIncome)}</p>
+                </div>
+                <div className="bg-red-50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-gray-500">รายจ่าย</p>
+                  <p className="font-bold text-red-600 text-sm">{formatCurrency(totalExpense)}</p>
+                </div>
+                <div className={`${profit >= 0 ? 'bg-emerald-50' : 'bg-red-50'} rounded-xl p-3 text-center`}>
+                  <p className="text-xs text-gray-500">{profit >= 0 ? 'กำไร' : 'ขาดทุน'}</p>
+                  <p className={`font-bold text-sm ${profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(Math.abs(profit))}</p>
+                </div>
+              </div>
+
+              {/* Transaction List */}
+              <div className="flex-1 overflow-y-auto p-4">
+                <p className="text-sm text-gray-500 mb-3">รายการทั้งหมด ({projectTxns.length} รายการ)</p>
+                {projectTxns.length === 0 ? (
+                  <p className="text-sm text-gray-400 text-center py-8">ยังไม่มีรายการ</p>
+                ) : (
+                  <div className="space-y-2">
+                    {projectTxns.map(t => (
+                      <div key={t.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                        <div>
+                          <p className="font-medium text-gray-800 text-sm">{t.description || t.category}</p>
+                          <p className="text-xs text-gray-500">{formatDate(t.date)}</p>
+                        </div>
+                        <span className={`font-semibold text-sm ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {t.type === 'income' ? '+' : '-'}{formatCurrency(t.amount)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -1830,7 +1979,7 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
         className="w-full px-4 py-2 border border-gray-300 rounded-xl text-sm"
       >
         <option value="">ทุกโปรเจกต์</option>
-        {projects.map(p => (
+        {[...projects].reverse().map(p => (
           <option key={p.id} value={p.id}>{p.name}</option>
         ))}
       </select>
@@ -1850,7 +1999,14 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
             >
               <div className="flex-1">
                 <p className="font-medium text-gray-800">{t.description || t.category}</p>
-                <p className="text-xs text-gray-500">{formatDate(t.date)} - {getProjectName(t.projectId)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-gray-500">{formatDate(t.date)}</p>
+                  {t.projectId && (
+                    <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded">
+                      {getProjectName(t.projectId)}
+                    </span>
+                  )}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className={`font-semibold ${t.type === 'income' ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -1880,7 +2036,7 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
 // Owner Projects
 const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
   const projectStats = useMemo(() => {
-    return projects.map(p => {
+    return [...projects].reverse().map(p => {
       const projectTransactions = transactions.filter(t => t.projectId === p.id);
       const income = projectTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
       const expense = projectTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -2557,6 +2713,11 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
       ? Math.max(0, (dailyWage * aggregatedAttendance.workDays) * 0.5 - totalAdvance)
       : Math.max(0, grossPay * 0.5 - totalAdvance);
 
+    // คำนวณวันทำงานรวมจากวันเริ่มงาน
+    const workingDaysFromStart = startDate
+      ? Math.max(0, Math.floor((new Date() - new Date(startDate)) / 86400000) + 1)
+      : 0;
+
     return {
       dailyWage,
       grossPay,
@@ -2568,6 +2729,7 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
       remainingAdvance,
       wageHistory,
       startDate,
+      workingDaysFromStart,
       useWageHistory: viewMode === 'all' && totalEarningsFromHistory !== null
     };
   }, [user, attendance, advances, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo]);
@@ -2703,45 +2865,19 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
           <Calendar className="w-5 h-5 text-emerald-500" />
           {viewMode === 'all' ? 'สรุปการทำงานทั้งหมด' : viewMode === 'week' ? 'สรุปการทำงานสัปดาห์นี้' : viewMode === 'custom' ? 'สรุปการทำงานช่วงที่เลือก' : 'สรุปการทำงานเดือนนี้'}
         </h3>
-        {viewMode === 'all' ? (
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-emerald-50 rounded-xl p-3 text-center">
-              <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-emerald-600">{stats.attendance.workDays}</p>
-              <p className="text-xs text-gray-500">วันทำงานรวม</p>
-            </div>
-            <div className="bg-blue-50 rounded-xl p-3 text-center">
-              <Calendar className="w-6 h-6 text-blue-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-blue-600">{stats.attendance.leaveDays}</p>
-              <p className="text-xs text-gray-500">ลางาน</p>
-            </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="bg-emerald-50 rounded-xl p-3 text-center">
+            <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-emerald-600">{stats.workingDaysFromStart}</p>
+            <p className="text-xs text-gray-500">วันทำงานรวม</p>
+            {stats.startDate && <p className="text-xs text-gray-400">ตั้งแต่ {formatDate(stats.startDate)}</p>}
           </div>
-        ) : (
-          <div className="grid grid-cols-4 gap-2">
-            <div className="bg-emerald-50 rounded-xl p-3 text-center">
-              <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-emerald-600">{stats.attendance.workDays}</p>
-              <p className="text-xs text-gray-500">วันทำงาน</p>
-            </div>
-            <div className="bg-yellow-50 rounded-xl p-3 text-center">
-              <Clock className="w-6 h-6 text-yellow-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-yellow-600">{stats.attendance.lateDays}</p>
-              <p className="text-xs text-gray-500">มาสาย</p>
-              <p className="text-xs text-red-500">-{stats.attendance.lateDays * 50}B</p>
-            </div>
-            <div className="bg-red-50 rounded-xl p-3 text-center">
-              <XCircle className="w-6 h-6 text-red-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-red-600">{stats.attendance.absentDays}</p>
-              <p className="text-xs text-gray-500">ขาดงาน</p>
-              <p className="text-xs text-red-500">-{stats.attendance.absentDays * 300}B</p>
-            </div>
-            <div className="bg-blue-50 rounded-xl p-3 text-center">
-              <Calendar className="w-6 h-6 text-blue-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-blue-600">{stats.attendance.leaveDays}</p>
-              <p className="text-xs text-gray-500">ลางาน</p>
-            </div>
+          <div className="bg-blue-50 rounded-xl p-3 text-center">
+            <Calendar className="w-6 h-6 text-blue-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-blue-600">{stats.attendance.leaveDays}</p>
+            <p className="text-xs text-gray-500">ลางาน</p>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Wage History (mode: all, ถ้ามีมากกว่า 1 entry) */}
