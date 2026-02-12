@@ -12,10 +12,8 @@ import {
   getSupabase,
   getSupabaseConfig,
   saveSupabaseConfig,
-  isSupabaseConfigured,
   resetSupabaseInstance,
   getProfile,
-  getAllProfiles,
   resetUserPassword,
   verifyPassword,
   getProfileByUsername,
@@ -376,112 +374,6 @@ const getCurrentMonth = () => {
 
 // ================== COMPONENTS ==================
 
-// Supabase Setup Screen
-const SupabaseSetupScreen = ({ onSetupComplete }) => {
-  const [url, setUrl] = useState('');
-  const [anonKey, setAnonKey] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setIsLoading(true);
-
-    try {
-      saveSupabaseConfig(url, anonKey);
-      resetSupabaseInstance();
-
-      const supabase = getSupabase();
-      if (!supabase) {
-        throw new Error('ไม่สามารถสร้าง Supabase client ได้');
-      }
-
-      const { error } = await supabase.auth.getSession();
-      if (error) throw error;
-
-      onSetupComplete();
-    } catch (err) {
-      setError(err.message || 'ไม่สามารถเชื่อมต่อได้ ตรวจสอบ URL และ Key');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Database className="w-10 h-10 text-indigo-600" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800">ตั้งค่า Supabase</h1>
-          <p className="text-gray-500 mt-2">เชื่อมต่อกับ Supabase เพื่อใช้งานระบบ</p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Supabase URL
-            </label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-              placeholder="https://xxx.supabase.co"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Anon Key
-            </label>
-            <input
-              type="password"
-              value={anonKey}
-              onChange={(e) => setAnonKey(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-              placeholder="eyJhbGciOi..."
-              required
-            />
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg">
-              <AlertCircle className="w-5 h-5 flex-shrink-0" />
-              <span className="text-sm">{error}</span>
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-medium hover:bg-indigo-700 transition flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {isLoading ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Check className="w-5 h-5" />
-            )}
-            บันทึกและเชื่อมต่อ
-          </button>
-        </form>
-
-        <div className="mt-6 p-4 bg-indigo-50 rounded-xl">
-          <h3 className="text-sm font-medium text-indigo-800 mb-2">วิธีหาค่า URL และ Key</h3>
-          <ol className="text-xs text-indigo-700 space-y-1 list-decimal list-inside">
-            <li>ไปที่ supabase.com และสร้าง project</li>
-            <li>ไปที่ Settings &gt; API</li>
-            <li>คัดลอก Project URL และ anon public key</li>
-          </ol>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 // Login Screen - verify from profiles table
 const LoginScreen = ({ onLogin }) => {
   const [username, setUsername] = useState('');
@@ -524,7 +416,7 @@ const LoginScreen = ({ onLogin }) => {
           <div className="w-20 h-20 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Wallet className="w-10 h-10 text-indigo-600" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-800">Money Tracker Pro</h1>
+          <h1 className="text-2xl font-bold text-gray-800">ปั้นตัง Finance</h1>
           <p className="text-gray-500 mt-2">ระบบจัดการรายรับ-รายจ่าย</p>
         </div>
 
@@ -1986,7 +1878,7 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
     const totalAdvance = monthAdvances.reduce((sum, a) => sum + a.amount, 0);
 
     const staffInfo = staffData.find(s => s.username === username || s.id === user.id);
-    const dailyWage = staffInfo?.daily_wage || staffInfo?.dailyWage || user.profile?.daily_wage || 0;
+    const dailyWage = staffInfo?.daily_wage || staffInfo?.dailyWage || 0;
     const grossPay = dailyWage * monthAttendance.workDays;
     const deductions = (monthAttendance.lateDays * 50) + (monthAttendance.absentDays * 300);
     const netSalary = grossPay - deductions - totalAdvance;
@@ -2206,7 +2098,7 @@ const AppContent = () => {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
-  const [isSupabaseReady, setIsSupabaseReady] = useState(false);
+  const [isSupabaseReady, setIsSupabaseReady] = useState(true); // Always ready (hardcoded config)
 
   // Data State
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
@@ -2235,17 +2127,7 @@ const AppContent = () => {
     advances: INITIAL_ADVANCES
   }, isSupabaseReady && user);
 
-  // Check Supabase configuration on mount
-  useEffect(() => {
-    const checkSupabase = () => {
-      const configured = isSupabaseConfigured();
-      setIsSupabaseReady(configured);
-      if (!configured) {
-        setIsAuthLoading(false);
-      }
-    };
-    checkSupabase();
-  }, []);
+  // Supabase is always configured (hardcoded)
 
   // Check session from localStorage
   useEffect(() => {
@@ -2344,11 +2226,6 @@ const AppContent = () => {
     setCurrentPage('dashboard');
   };
 
-  const handleSupabaseSetupComplete = () => {
-    setIsSupabaseReady(true);
-    setIsAuthLoading(false);
-  };
-
   const handleSaveGeminiKey = useCallback(async (key) => {
     setGeminiApiKey(key);
     try {
@@ -2365,6 +2242,20 @@ const AppContent = () => {
       if (data.projects?.length > 0) setProjects(data.projects);
       if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
       if (data.advances?.length > 0) setAdvances(data.advances);
+      if (data.staff?.length > 0) {
+        setStaffData(data.staff.map(s => ({
+          id: s.id,
+          username: s.username,
+          name: s.name,
+          role: s.role,
+          dailyWage: Number(s.dailyWage) || 0,
+          daily_wage: Number(s.dailyWage) || 0,
+          phone: s.phone,
+          startDate: s.startDate,
+          start_date: s.startDate,
+          active: s.active !== false && s.active !== 'false'
+        })));
+      }
     }
   }, [googleSheets]);
 
@@ -2437,11 +2328,6 @@ const AppContent = () => {
       .map(s => ({ id: s.username || s.id, name: s.name }));
   }, [staffData]);
 
-  // Show Supabase setup if not configured
-  if (!isSupabaseReady) {
-    return <SupabaseSetupScreen onSetupComplete={handleSupabaseSetupComplete} />;
-  }
-
   // Show loading while checking auth
   if (isAuthLoading) {
     return <LoadingScreen />;
@@ -2479,7 +2365,7 @@ const AppContent = () => {
           <div className="flex items-center gap-3">
             <Wallet className="w-6 h-6" />
             <div>
-              <h1 className="font-bold">Money Tracker Pro</h1>
+              <h1 className="font-bold">ปั้นตัง Finance</h1>
               <div className="flex items-center gap-2">
                 <p className="text-xs opacity-80">{isOwner ? 'เจ้าของกิจการ' : 'พนักงาน'}</p>
                 {isOwner && (

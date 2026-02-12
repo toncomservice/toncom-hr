@@ -1,39 +1,23 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase Configuration
-// ค่า URL และ Key สามารถตั้งค่าได้ 2 วิธี:
-// 1. ผ่าน Environment Variables (แนะนำสำหรับ production)
-// 2. ผ่าน localStorage (สำหรับทดสอบหรือ setup ครั้งแรก)
+// Supabase Configuration - ค่าคงที่สำหรับ production
+const DEFAULT_SUPABASE_URL = 'https://awnswjeviqnkktjvovqv.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3bnN3amV2aXFua2t0anZvdnF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAyMDk3NzAsImV4cCI6MjA4NTc4NTc3MH0.fh4xvhZEo06012esxsf_bCXciPQyyXWviARXQQrxMck';
 
-const STORAGE_KEYS = {
-  SUPABASE_URL: 'money_tracker_supabase_url',
-  SUPABASE_ANON_KEY: 'money_tracker_supabase_anon_key',
-};
-
-// ดึงค่า config จาก env หรือ localStorage
+// ดึงค่า config (ใช้ค่าคงที่)
 export const getSupabaseConfig = () => {
-  const url = import.meta.env.VITE_SUPABASE_URL || localStorage.getItem(STORAGE_KEYS.SUPABASE_URL) || '';
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || localStorage.getItem(STORAGE_KEYS.SUPABASE_ANON_KEY) || '';
-  return { url, anonKey };
+  return {
+    url: DEFAULT_SUPABASE_URL,
+    anonKey: DEFAULT_SUPABASE_ANON_KEY
+  };
 };
 
-// บันทึก config ลง localStorage
-export const saveSupabaseConfig = (url, anonKey) => {
-  if (url) localStorage.setItem(STORAGE_KEYS.SUPABASE_URL, url);
-  if (anonKey) localStorage.setItem(STORAGE_KEYS.SUPABASE_ANON_KEY, anonKey);
-};
+// สำหรับ backward compatibility
+export const saveSupabaseConfig = () => {};
+export const clearSupabaseConfig = () => {};
 
-// ลบ config จาก localStorage
-export const clearSupabaseConfig = () => {
-  localStorage.removeItem(STORAGE_KEYS.SUPABASE_URL);
-  localStorage.removeItem(STORAGE_KEYS.SUPABASE_ANON_KEY);
-};
-
-// ตรวจสอบว่า config ครบถ้วนหรือไม่
-export const isSupabaseConfigured = () => {
-  const { url, anonKey } = getSupabaseConfig();
-  return Boolean(url && anonKey);
-};
+// ตรวจสอบว่า config ครบถ้วนหรือไม่ (เสมอ true)
+export const isSupabaseConfigured = () => true;
 
 // สร้าง Supabase client
 let supabaseInstance = null;
