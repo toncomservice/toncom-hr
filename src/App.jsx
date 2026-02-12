@@ -1195,16 +1195,29 @@ const SettingsModal = ({
               <Camera className="w-4 h-4 inline mr-1" />
               Gemini API Key (สำหรับ OCR)
             </label>
-            <input
-              type="password"
-              value={tempGeminiKey}
-              onChange={(e) => {
-                setTempGeminiKey(e.target.value);
-                onSaveGeminiKey(e.target.value);
-              }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
-              placeholder="AIza..."
-            />
+            <div className="flex gap-2">
+              <input
+                type="password"
+                value={tempGeminiKey}
+                onChange={(e) => setTempGeminiKey(e.target.value)}
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
+                placeholder="AIza..."
+              />
+              <button
+                onClick={() => {
+                  onSaveGeminiKey(tempGeminiKey);
+                }}
+                disabled={tempGeminiKey === geminiApiKey}
+                className={`px-4 py-3 rounded-xl text-sm font-medium transition flex items-center gap-1 ${
+                  tempGeminiKey === geminiApiKey
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                }`}
+              >
+                <Save className="w-4 h-4" />
+                บันทึก
+              </button>
+            </div>
             <p className="text-xs text-gray-500 mt-2">
               ใช้สำหรับสแกนใบเสร็จอัตโนมัติ
             </p>
