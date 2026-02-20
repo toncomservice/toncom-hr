@@ -3068,12 +3068,10 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
               <span className="text-xs text-gray-500">รายได้รวม ({stats.workingDaysFromStart} วัน)</span>
               <span className="text-sm font-bold text-indigo-600">{formatCurrency(stats.totalWageEarnings)}</span>
             </div>
-            {stats.totalAllBonuses > 0 && (
-              <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-500">ค่าแรงพิเศษสะสม</span>
-                <span className="text-sm font-semibold text-amber-600">+{formatCurrency(stats.totalAllBonuses)}</span>
-              </div>
-            )}
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-500">เงินพิเศษสะสม</span>
+              <span className="text-sm font-semibold text-amber-600">+{formatCurrency(stats.totalAllBonuses)}</span>
+            </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-500">หักเบิกแล้ว</span>
               <span className="text-sm font-semibold text-purple-600">-{formatCurrency(stats.totalAllAdvances)}</span>
@@ -3254,14 +3252,24 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
               {formatCurrency(stats.grossPay - stats.bonusAmount)}
             </span>
           </div>
-          {stats.filteredBonuses?.length > 0 && stats.filteredBonuses.map((b, i) => (
-            <div key={i} className="flex justify-between py-2 border-b border-gray-100">
-              <span className="text-gray-600 text-sm truncate max-w-[60%]">
-                เงินพิเศษ · {b.description} <span className="text-xs text-gray-400">({formatDate(b.date)})</span>
-              </span>
-              <span className="font-medium text-amber-600">+{formatCurrency(b.amount)}</span>
+          <div className="border-b border-gray-100">
+            <div className="flex justify-between py-2">
+              <span className="text-gray-600">รวมเงินพิเศษ</span>
+              <span className="font-medium text-amber-600">+{formatCurrency(stats.bonusAmount)}</span>
             </div>
-          ))}
+            {stats.filteredBonuses?.length > 0 && (
+              <div className="pb-2 space-y-1">
+                {stats.filteredBonuses.map((b, i) => (
+                  <div key={i} className="flex justify-between items-center pl-3">
+                    <span className="text-xs text-gray-400 truncate max-w-[65%]">
+                      · {b.description} <span className="text-gray-300">({formatDate(b.date)})</span>
+                    </span>
+                    <span className="text-xs text-amber-500">+{formatCurrency(b.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <div className="flex justify-between py-2 border-b border-gray-100">
             <span className="text-gray-600">หักสาย ({stats.attendance.lateDays} วัน x 50B)</span>
             <span className="text-red-500">-{formatCurrency(stats.attendance.lateDays * 50)}</span>
