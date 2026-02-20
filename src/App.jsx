@@ -2845,7 +2845,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 // Staff Dashboard
 const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
   const currentMonth = getCurrentMonth();
-  const [viewMode, setViewMode] = useState('month');
+  const [viewMode, setViewMode] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
 
@@ -2967,8 +2967,12 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
       : dailyWage * aggregatedAttendance.workDays + bonusAmount;
     const deductions = (aggregatedAttendance.lateDays * 50) + (aggregatedAttendance.absentDays * 300);
     const netSalary = grossPay - deductions - totalAdvance;
-    const baseWagePay = dailyWage * aggregatedAttendance.workDays;
-    const remainingAdvance = Math.max(0, baseWagePay * 0.5 - totalAdvance);
+    // เบิกได้อีก: คำนวณจากเดือนปัจจุบันเสมอ (ไม่ขึ้นกับ viewMode)
+    const currentMonthData = userAttendance[currentMonth] || {};
+    const currentMonthWagePay = dailyWage * (currentMonthData.workDays || 0);
+    const currentMonthAdvances = advances.filter(a => a.staffId === username && a.month === currentMonth);
+    const currentMonthTotalAdvance = currentMonthAdvances.reduce((sum, a) => sum + a.amount, 0);
+    const remainingAdvance = Math.max(0, currentMonthWagePay * 0.5 - currentMonthTotalAdvance);
 
     // คำนวณวันทำงานรวมจากวันเริ่มงาน
     const workingDaysFromStart = startDate
@@ -3012,7 +3016,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
       totalAllDeductions,
       netTotalEarnings
     };
-  }, [user, attendance, advances, bonuses, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo]);
+  }, [user, attendance, advances, bonuses, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo, currentMonth]);
 
   const displayName = user.profile?.name || user.email?.split('@')[0] || 'พนักงาน';
 
@@ -3171,7 +3175,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
         <StatsCard
           title="เบิกได้อีก"
           value={formatCurrency(stats.remainingAdvance)}
-          subtitle="(ไม่เกิน 50%)"
+          subtitle="(เดือนนี้, ≤50%)"
           icon={ArrowUpRight}
           color="indigo"
         />
@@ -3179,21 +3183,37 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
 
       {/* Attendance Summary */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-        <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-          <Calendar className="w-5 h-5 text-emerald-500" />
-          {viewMode === 'all' ? 'สรุปการทำงานทั้งหมด' : viewMode === 'week' ? 'สรุปการทำงานสัปดาห์นี้' : viewMode === 'custom' ? 'สรุปการทำงานช่วงที่เลือก' : 'สรุปการทำงานเดือนนี้'}
-        </h3>
+        <div className="flex items-start justify-between mb-3">
+          <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Calendar className="w-5 h-5 text-emerald-500" />
+            {viewMode === 'all' ? 'สรุปการทำงานทั้งหมด' : viewMode === 'week' ? 'สรุปการทำงาน (เดือนนี้)' : viewMode === 'custom' ? 'สรุปการทำงานช่วงที่เลือก' : 'สรุปการทำงานเดือนนี้'}
+          </h3>
+          {viewMode === 'week' && (
+            <span className="text-xs text-gray-400 bg-gray-100 rounded px-2 py-0.5">ข้อมูลรายเดือน</span>
+          )}
+        </div>
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-emerald-50 rounded-xl p-3 text-center">
             <CheckCircle className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-emerald-600">{stats.workingDaysFromStart}</p>
-            <p className="text-xs text-gray-500">วันทำงานรวม</p>
-            {stats.startDate && <p className="text-xs text-gray-400">ตั้งแต่ {formatDate(stats.startDate)}</p>}
+            <p className="text-2xl font-bold text-emerald-600">{stats.attendance.workDays}</p>
+            <p className="text-xs text-gray-500">วันทำงาน</p>
           </div>
           <div className="bg-blue-50 rounded-xl p-3 text-center">
             <Calendar className="w-6 h-6 text-blue-500 mx-auto mb-1" />
             <p className="text-2xl font-bold text-blue-600">{stats.attendance.leaveDays}</p>
             <p className="text-xs text-gray-500">ลางาน</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-2">
+          <div className="bg-yellow-50 rounded-xl p-3 text-center">
+            <Clock className="w-6 h-6 text-yellow-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-yellow-600">{stats.attendance.lateDays}</p>
+            <p className="text-xs text-gray-500">มาสาย</p>
+          </div>
+          <div className="bg-red-50 rounded-xl p-3 text-center">
+            <XCircle className="w-6 h-6 text-red-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-red-600">{stats.attendance.absentDays}</p>
+            <p className="text-xs text-gray-500">ขาดงาน</p>
           </div>
         </div>
       </div>
@@ -3226,7 +3246,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
           <div className="flex justify-between py-2 border-b border-gray-100">
             <span className="text-gray-600">
               {stats.useWageHistory
-                ? `รายได้รวม (ตาม wageHistory)`
+                ? `ค่าแรงรวม (${stats.attendance.workDays} วัน)`
                 : `ค่าแรง (${stats.attendance.workDays} วัน x ${formatCurrency(stats.dailyWage)})`
               }
             </span>
