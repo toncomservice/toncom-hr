@@ -246,6 +246,10 @@ const useGoogleSheets = (initialData, isReady = false) => {
     return sendRequest('addAdvance', advance);
   }, [sendRequest]);
 
+  const saveBonus = useCallback((bonus) => {
+    return sendRequest('addBonus', bonus);
+  }, [sendRequest]);
+
   const saveAttendance = useCallback((attendance) => {
     return sendRequest('saveAttendance', attendance);
   }, [sendRequest]);
@@ -278,6 +282,7 @@ const useGoogleSheets = (initialData, isReady = false) => {
     deleteTransaction,
     saveProject,
     saveAdvance,
+    saveBonus,
     saveAttendance,
     saveStaff,
     deleteStaff,
@@ -294,6 +299,7 @@ const INITIAL_PROJECTS = [];
 const INITIAL_TRANSACTIONS = [];
 const INITIAL_ATTENDANCE = {};
 const INITIAL_ADVANCES = [];
+const INITIAL_BONUSES = [];
 
 // ================== GEMINI API FUNCTION ==================
 const analyzeReceiptWithGemini = async (base64Image, apiKey) => {
@@ -1499,6 +1505,120 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
   );
 };
 
+// Bonus Modal
+const BonusModal = ({ isOpen, onClose, onSave, staffList, editingBonus }) => {
+  const [staffId, setStaffId] = useState('');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (editingBonus) {
+      setStaffId(editingBonus.staffId || '');
+      setAmount(String(editingBonus.amount || ''));
+      setDescription(editingBonus.description || '');
+      setDate(editingBonus.date || new Date().toISOString().split('T')[0]);
+    } else {
+      setStaffId('');
+      setAmount('');
+      setDescription('');
+      setDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [editingBonus, isOpen]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const month = date.substring(0, 7);
+    onSave({
+      id: editingBonus?.id || generateId('B'),
+      staffId,
+      amount: parseFloat(amount),
+      description,
+      date,
+      month
+    });
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">
+            {editingBonus ? 'แก้ไขเงินพิเศษ' : 'บันทึกเงินพิเศษ'}
+          </h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">พนักงาน</label>
+            <select
+              value={staffId}
+              onChange={(e) => setStaffId(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
+              required
+              disabled={!!editingBonus}
+            >
+              <option value="">-- เลือกพนักงาน --</option>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">จำนวนเงิน (บาท)</label>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
+              placeholder="0"
+              min="0"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">รายละเอียดงาน</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
+              placeholder="เช่น ติดตั้งกล้อง PTT สาขานครปฐม"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">วันที่</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            className="w-full py-3 bg-amber-500 text-white rounded-xl font-medium hover:bg-amber-600 transition"
+          >
+            บันทึกเงินพิเศษ
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // Attendance Modal
 const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) => {
   const [staffId, setStaffId] = useState('');
@@ -1507,7 +1627,6 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
   const [lateDays, setLateDays] = useState('');
   const [absentDays, setAbsentDays] = useState('');
   const [leaveDays, setLeaveDays] = useState('');
-  const [bonusAmount, setBonusAmount] = useState('');
 
   useEffect(() => {
     if (editingData) {
@@ -1517,7 +1636,6 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
       setLateDays(String(editingData.lateDays ?? ''));
       setAbsentDays(String(editingData.absentDays ?? ''));
       setLeaveDays(String(editingData.leaveDays ?? ''));
-      setBonusAmount(String(editingData.bonusAmount ?? ''));
     } else {
       setStaffId('');
       setMonth(getCurrentMonth());
@@ -1525,7 +1643,6 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
       setLateDays('');
       setAbsentDays('');
       setLeaveDays('');
-      setBonusAmount('');
     }
   }, [editingData, isOpen]);
 
@@ -1537,8 +1654,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
       workDays: parseInt(workDays) || 0,
       lateDays: parseInt(lateDays) || 0,
       absentDays: parseInt(absentDays) || 0,
-      leaveDays: parseInt(leaveDays) || 0,
-      bonusAmount: parseFloat(bonusAmount) || 0
+      leaveDays: parseInt(leaveDays) || 0
     });
     onClose();
   };
@@ -1630,19 +1746,6 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
                 min="0"
               />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">ค่าแรงพิเศษ (บาท)</label>
-            <input
-              type="number"
-              value={bonusAmount}
-              onChange={(e) => setBonusAmount(e.target.value)}
-              className="w-full px-4 py-3 border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-transparent transition"
-              placeholder="0"
-              min="0"
-            />
-            <p className="text-xs text-gray-400 mt-1">โบนัส / ค่าติดตั้งสำเร็จ / รายได้พิเศษ</p>
           </div>
 
           <button
@@ -2454,7 +2557,7 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, staff, st
 };
 
 // Owner Staff Management
-const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttendance, onEditAttendance, onResetPassword, onEditWage }) => {
+const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage }) => {
   const currentMonth = getCurrentMonth();
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -2484,17 +2587,20 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
         const startDate = staff.start_date || staff.startDate || staff.created_at;
         const workingDaysFromStart = startDate ? calculateWorkingDays(startDate, today) : 0;
 
-        // เงินเดือนเดือนนี้ = ค่าแรง x วันทำงาน + ค่าแรงพิเศษ
-        const monthBonus = monthAttendance.bonusAmount || 0;
+        // เงินพิเศษเดือนนี้ (จาก bonuses array)
+        const monthBonusList = (bonuses || []).filter(b => b.staffId === staff.username && b.month === currentMonth);
+        const monthBonus = monthBonusList.reduce((sum, b) => sum + b.amount, 0);
         const grossPay = dailyWage * monthAttendance.workDays + monthBonus;
         const monthDeductions = (monthAttendance.lateDays * 50) + (monthAttendance.absentDays * 300);
         const netSalary = grossPay - monthDeductions - totalAdvance;
 
-        // รายได้รวมตั้งแต่วันเริ่มงาน (คำนวณจาก wageHistory + ค่าแรงพิเศษสะสม)
+        // รายได้รวมตั้งแต่วันเริ่มงาน (คำนวณจาก wageHistory + เงินพิเศษสะสม)
         const wageHistory = staff.wageHistory || [{ dailyWage, effectiveDate: startDate || '2025-01-01' }];
         const staffAttendance = attendance[staff.username] || {};
-        const totalAllBonuses = Object.values(staffAttendance).reduce((sum, m) => sum + (m.bonusAmount || 0), 0);
-        const totalEarnings = calculateEarningsWithHistory(wageHistory, startDate, today) + totalAllBonuses;
+        const allStaffBonuses = (bonuses || []).filter(b => b.staffId === staff.username);
+        const totalAllBonuses = allStaffBonuses.reduce((sum, b) => sum + b.amount, 0);
+        const totalWageEarnings = calculateEarningsWithHistory(wageHistory, startDate, today);
+        const totalEarnings = totalWageEarnings + totalAllBonuses;
 
         // คำนวณเงินเบิกทั้งหมด (ทุกเดือน) จาก Sheet
         const allTimeAdvances = advances.filter(a => a.staffId === staff.username);
@@ -2516,10 +2622,12 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
           totalAdvance,
           grossPay,
           monthBonus,
+          monthBonusList,
           deductions: monthDeductions,
           netSalary,
           startDate,
           workingDaysFromStart,
+          totalWageEarnings,
           totalEarnings,
           totalAllBonuses,
           totalAllAdvances,
@@ -2527,7 +2635,7 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
           netTotalEarnings
         };
       });
-  }, [staffData, attendance, advances, currentMonth]);
+  }, [staffData, attendance, advances, bonuses, currentMonth]);
 
   // คำนวณค่าใช้จ่ายพนักงานรายวันรวม (สำหรับใช้คำนวณต้นทุน)
   const dailyStaffExpense = useMemo(() => {
@@ -2552,6 +2660,13 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
           >
             <Clock className="w-4 h-4" />
             บันทึกเวลา
+          </button>
+          <button
+            onClick={onAddBonus}
+            className="bg-amber-500 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-600 transition flex items-center gap-1"
+          >
+            <Plus className="w-4 h-4" />
+            เงินพิเศษ
           </button>
           <button
             onClick={onAddAdvance}
@@ -2619,7 +2734,7 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-xs text-gray-500">รายได้รวม ({staff.workingDaysFromStart} วัน)</span>
-                      <span className="text-sm font-bold text-indigo-600">{formatCurrency(staff.totalEarnings)}</span>
+                      <span className="text-sm font-bold text-indigo-600">{formatCurrency(staff.totalWageEarnings)}</span>
                     </div>
                     {staff.totalAllBonuses > 0 && (
                       <div className="flex justify-between items-center">
@@ -2688,10 +2803,15 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
                     <p className="text-gray-500">เบิกเดือนนี้</p>
                   </div>
                 </div>
-                {staff.monthBonus > 0 && (
-                  <div className="mt-2 bg-amber-50 rounded-lg p-2 flex justify-between items-center text-xs">
-                    <span className="text-amber-700 font-medium">ค่าแรงพิเศษเดือนนี้</span>
-                    <span className="font-bold text-amber-600">+{formatCurrency(staff.monthBonus)}</span>
+                {staff.monthBonusList?.length > 0 && (
+                  <div className="mt-2 bg-amber-50 rounded-lg p-2 space-y-1">
+                    <p className="text-xs font-medium text-amber-700">เงินพิเศษเดือนนี้ (+{formatCurrency(staff.monthBonus)})</p>
+                    {staff.monthBonusList.map((b, i) => (
+                      <div key={i} className="flex justify-between text-xs">
+                        <span className="text-gray-500">{formatDate(b.date)} · {b.description}</span>
+                        <span className="font-semibold text-amber-600">{formatCurrency(b.amount)}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </>
@@ -2723,7 +2843,7 @@ const OwnerStaff = ({ staffData, attendance, advances, onAddAdvance, onAddAttend
 };
 
 // Staff Dashboard
-const StaffDashboard = ({ user, attendance, advances, staffData }) => {
+const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
   const currentMonth = getCurrentMonth();
   const [viewMode, setViewMode] = useState('month');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -2761,12 +2881,14 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
     const startDate = staffInfo?.start_date || staffInfo?.startDate || staffInfo?.created_at;
     const wageHistory = staffInfo?.wageHistory || [{ dailyWage, effectiveDate: startDate || '2025-01-01' }];
 
-    let aggregatedAttendance = { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0, bonusAmount: 0 };
+    let aggregatedAttendance = { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0 };
     let filteredAdvances = [];
+    let filteredBonuses = [];
     let totalEarningsFromHistory = null;
 
+    const userBonuses = (bonuses || []).filter(b => b.staffId === username);
+
     if (viewMode === 'week') {
-      // สัปดาห์นี้: หาเดือนที่ครอบคลุม
       const startMonth = `${weekRange.start.getFullYear()}-${String(weekRange.start.getMonth() + 1).padStart(2, '0')}`;
       const endMonth = `${weekRange.end.getFullYear()}-${String(weekRange.end.getMonth() + 1).padStart(2, '0')}`;
       const monthsInRange = new Set([startMonth, endMonth]);
@@ -2777,13 +2899,16 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
           aggregatedAttendance.lateDays += mData.lateDays || 0;
           aggregatedAttendance.absentDays += mData.absentDays || 0;
           aggregatedAttendance.leaveDays += mData.leaveDays || 0;
-          aggregatedAttendance.bonusAmount += mData.bonusAmount || 0;
         }
       });
       filteredAdvances = advances.filter(a => {
-        if (a.staffId !== username) return false;
-        if (!a.date) return false;
+        if (a.staffId !== username || !a.date) return false;
         const d = new Date(a.date);
+        return d >= weekRange.start && d <= weekRange.end;
+      });
+      filteredBonuses = userBonuses.filter(b => {
+        if (!b.date) return false;
+        const d = new Date(b.date);
         return d >= weekRange.start && d <= weekRange.end;
       });
     } else if (viewMode === 'month') {
@@ -2792,15 +2917,14 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
         workDays: mData.workDays || 0,
         lateDays: mData.lateDays || 0,
         absentDays: mData.absentDays || 0,
-        leaveDays: mData.leaveDays || 0,
-        bonusAmount: mData.bonusAmount || 0
+        leaveDays: mData.leaveDays || 0
       };
       filteredAdvances = advances.filter(a => a.staffId === username && a.month === selectedMonth);
+      filteredBonuses = userBonuses.filter(b => b.month === selectedMonth);
     } else if (viewMode === 'custom' && customRange.start && customRange.end) {
       const rangeStart = new Date(customRange.start);
       const rangeEnd = new Date(customRange.end);
       rangeEnd.setHours(23, 59, 59, 999);
-      // รวม attendance ทุกเดือนที่อยู่ในช่วง
       Object.keys(userAttendance).forEach(m => {
         const [y, mo] = m.split('-').map(Number);
         const monthStart = new Date(y, mo - 1, 1);
@@ -2811,7 +2935,6 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
           aggregatedAttendance.lateDays += mData.lateDays || 0;
           aggregatedAttendance.absentDays += mData.absentDays || 0;
           aggregatedAttendance.leaveDays += mData.leaveDays || 0;
-          aggregatedAttendance.bonusAmount += mData.bonusAmount || 0;
         }
       });
       filteredAdvances = advances.filter(a => {
@@ -2819,31 +2942,32 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
         const d = new Date(a.date);
         return d >= rangeStart && d <= rangeEnd;
       });
+      filteredBonuses = userBonuses.filter(b => {
+        if (!b.date) return false;
+        const d = new Date(b.date);
+        return d >= rangeStart && d <= rangeEnd;
+      });
     } else if (viewMode === 'all') {
-      // รวมทุกเดือน
       Object.values(userAttendance).forEach(mData => {
         aggregatedAttendance.workDays += mData.workDays || 0;
         aggregatedAttendance.lateDays += mData.lateDays || 0;
         aggregatedAttendance.absentDays += mData.absentDays || 0;
         aggregatedAttendance.leaveDays += mData.leaveDays || 0;
-        aggregatedAttendance.bonusAmount += mData.bonusAmount || 0;
       });
       filteredAdvances = advances.filter(a => a.staffId === username);
-      // คำนวณรายได้จาก wageHistory
+      filteredBonuses = userBonuses;
       const today = new Date().toISOString().split('T')[0];
       totalEarningsFromHistory = calculateEarningsWithHistory(wageHistory, startDate, today);
     }
 
     const totalAdvance = filteredAdvances.reduce((sum, a) => sum + a.amount, 0);
-    const bonusAmount = aggregatedAttendance.bonusAmount || 0;
+    const bonusAmount = filteredBonuses.reduce((sum, b) => sum + b.amount, 0);
     const grossPay = viewMode === 'all' && totalEarningsFromHistory !== null
       ? totalEarningsFromHistory + bonusAmount
       : dailyWage * aggregatedAttendance.workDays + bonusAmount;
     const deductions = (aggregatedAttendance.lateDays * 50) + (aggregatedAttendance.absentDays * 300);
     const netSalary = grossPay - deductions - totalAdvance;
-    const baseWagePay = viewMode === 'month'
-      ? dailyWage * aggregatedAttendance.workDays
-      : grossPay - bonusAmount;
+    const baseWagePay = dailyWage * aggregatedAttendance.workDays;
     const remainingAdvance = Math.max(0, baseWagePay * 0.5 - totalAdvance);
 
     // คำนวณวันทำงานรวมจากวันเริ่มงาน
@@ -2851,22 +2975,26 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
       ? Math.max(0, Math.floor((new Date() - new Date(startDate)) / 86400000) + 1)
       : 0;
 
-    // คำนวณยอดสะสมทั้งหมดตั้งแต่เริ่มงาน (ตรงกับฝั่ง Admin)
+    // ยอดสะสมทั้งหมด
     const allTimeAdvances = advances.filter(a => a.staffId === username);
     const totalAllAdvances = allTimeAdvances.reduce((sum, a) => sum + a.amount, 0);
     const staffAttendanceAll = attendance[username] || {};
     const totalAllDeductions = Object.values(staffAttendanceAll).reduce((sum, m) => {
       return sum + ((m.lateDays || 0) * 50) + ((m.absentDays || 0) * 300);
     }, 0);
-    const totalAllBonuses = Object.values(staffAttendanceAll).reduce((sum, m) => sum + (m.bonusAmount || 0), 0);
+    const totalAllBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
     const todayStr = new Date().toISOString().split('T')[0];
-    const totalEarnings = calculateEarningsWithHistory(wageHistory, startDate, todayStr) + totalAllBonuses;
+    // totalWageEarnings = เฉพาะค่าแรงตาม wageHistory (ไม่รวมโบนัส)
+    const totalWageEarnings = calculateEarningsWithHistory(wageHistory, startDate, todayStr);
+    // totalEarnings = ค่าแรง + เงินพิเศษสะสมทั้งหมด
+    const totalEarnings = totalWageEarnings + totalAllBonuses;
     const netTotalEarnings = totalEarnings - totalAllAdvances - totalAllDeductions;
 
     return {
       dailyWage,
       grossPay,
       bonusAmount,
+      filteredBonuses,
       attendance: aggregatedAttendance,
       advances: filteredAdvances,
       totalAdvance,
@@ -2877,13 +3005,14 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
       startDate,
       workingDaysFromStart,
       useWageHistory: viewMode === 'all' && totalEarningsFromHistory !== null,
+      totalWageEarnings,
       totalEarnings,
       totalAllBonuses,
       totalAllAdvances,
       totalAllDeductions,
       netTotalEarnings
     };
-  }, [user, attendance, advances, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo]);
+  }, [user, attendance, advances, bonuses, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo]);
 
   const displayName = user.profile?.name || user.email?.split('@')[0] || 'พนักงาน';
 
@@ -2933,7 +3062,7 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-500">รายได้รวม ({stats.workingDaysFromStart} วัน)</span>
-              <span className="text-sm font-bold text-indigo-600">{formatCurrency(stats.totalEarnings)}</span>
+              <span className="text-sm font-bold text-indigo-600">{formatCurrency(stats.totalWageEarnings)}</span>
             </div>
             {stats.totalAllBonuses > 0 && (
               <div className="flex justify-between items-center">
@@ -3105,12 +3234,14 @@ const StaffDashboard = ({ user, attendance, advances, staffData }) => {
               {formatCurrency(stats.grossPay - stats.bonusAmount)}
             </span>
           </div>
-          {stats.bonusAmount > 0 && (
-            <div className="flex justify-between py-2 border-b border-gray-100">
-              <span className="text-gray-600">ค่าแรงพิเศษ</span>
-              <span className="font-medium text-amber-600">+{formatCurrency(stats.bonusAmount)}</span>
+          {stats.filteredBonuses?.length > 0 && stats.filteredBonuses.map((b, i) => (
+            <div key={i} className="flex justify-between py-2 border-b border-gray-100">
+              <span className="text-gray-600 text-sm truncate max-w-[60%]">
+                เงินพิเศษ · {b.description} <span className="text-xs text-gray-400">({formatDate(b.date)})</span>
+              </span>
+              <span className="font-medium text-amber-600">+{formatCurrency(b.amount)}</span>
             </div>
-          )}
+          ))}
           <div className="flex justify-between py-2 border-b border-gray-100">
             <span className="text-gray-600">หักสาย ({stats.attendance.lateDays} วัน x 50B)</span>
             <span className="text-red-500">-{formatCurrency(stats.attendance.lateDays * 50)}</span>
@@ -3233,6 +3364,66 @@ const StaffAdvancesHistory = ({ user, advances }) => {
   );
 };
 
+// Staff Bonus History
+const StaffBonusHistory = ({ user, bonuses }) => {
+  const username = user.profile?.username || user.email?.split('@')[0];
+  const userBonuses = (bonuses || []).filter(b => b.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const totalBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
+
+  // จัดกลุ่มตามเดือน
+  const byMonth = userBonuses.reduce((acc, b) => {
+    if (!acc[b.month]) acc[b.month] = [];
+    acc[b.month].push(b);
+    return acc;
+  }, {});
+  const months = Object.keys(byMonth).sort().reverse();
+
+  return (
+    <div className="space-y-4">
+      <h2 className="text-lg font-bold text-gray-800">เงินพิเศษ</h2>
+
+      {/* Summary */}
+      <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl p-4 border border-amber-100">
+        <p className="text-sm text-gray-500">เงินพิเศษทั้งหมด</p>
+        <p className="text-2xl font-bold text-amber-600">{formatCurrency(totalBonuses)}</p>
+        <p className="text-xs text-gray-400 mt-1">{userBonuses.length} รายการ</p>
+      </div>
+
+      {/* Bonus List by Month */}
+      {userBonuses.length === 0 ? (
+        <div className="bg-white rounded-xl p-8 text-center text-gray-400">
+          <DollarSign className="w-12 h-12 mx-auto mb-2 opacity-50" />
+          <p>ยังไม่มีรายการเงินพิเศษ</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {months.map(month => {
+            const items = byMonth[month];
+            const monthTotal = items.reduce((sum, b) => sum + b.amount, 0);
+            return (
+              <div key={month} className="bg-white rounded-xl shadow-sm border border-gray-100">
+                <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-amber-50 rounded-t-xl">
+                  <span className="font-semibold text-gray-700 text-sm">{month}</span>
+                  <span className="font-bold text-amber-600">{formatCurrency(monthTotal)}</span>
+                </div>
+                {items.map((b, i) => (
+                  <div key={b.id} className={`p-4 flex items-start justify-between ${i !== items.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="font-medium text-gray-800 text-sm">{b.description}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(b.date)}</p>
+                    </div>
+                    <span className="font-bold text-amber-600 whitespace-nowrap">+{formatCurrency(b.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ================== MAIN APP ==================
 const AppContent = () => {
   // Auth State
@@ -3246,6 +3437,7 @@ const AppContent = () => {
   const [projects, setProjects] = useState(INITIAL_PROJECTS);
   const [attendance, setAttendance] = useState(INITIAL_ATTENDANCE);
   const [advances, setAdvances] = useState(INITIAL_ADVANCES);
+  const [bonuses, setBonuses] = useState(INITIAL_BONUSES);
   const [staffData, setStaffData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -3254,6 +3446,7 @@ const AppContent = () => {
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [showBonusModal, setShowBonusModal] = useState(false);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [editingAttendance, setEditingAttendance] = useState(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -3318,6 +3511,7 @@ const AppContent = () => {
           if (data.projects?.length > 0) setProjects(data.projects);
           if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
           if (data.advances?.length > 0) setAdvances(data.advances);
+          if (data.bonuses?.length > 0) setBonuses(data.bonuses);
           // Load staff data from Google Sheets
           if (data.staff?.length > 0) {
             const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
@@ -3408,6 +3602,7 @@ const AppContent = () => {
       if (data.projects?.length > 0) setProjects(data.projects);
       if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
       if (data.advances?.length > 0) setAdvances(data.advances);
+      if (data.bonuses?.length > 0) setBonuses(data.bonuses);
       if (data.staff?.length > 0) {
         setStaffData(data.staff.map(s => ({
           id: s.id,
@@ -3470,6 +3665,11 @@ const AppContent = () => {
   const handleSaveAdvance = async (advance) => {
     setAdvances(prev => [...prev, advance]);
     await googleSheets.saveAdvance(advance);
+  };
+
+  const handleSaveBonus = async (bonus) => {
+    setBonuses(prev => [...prev, bonus]);
+    await googleSheets.saveBonus(bonus);
   };
 
   const handleSaveAttendance = async (data) => {
@@ -3579,6 +3779,7 @@ const AppContent = () => {
       { id: 'dashboard', icon: Home, label: 'หน้าหลัก' },
       { id: 'attendance', icon: Calendar, label: 'การทำงาน' },
       { id: 'advances', icon: CreditCard, label: 'เบิกเงิน' },
+      { id: 'bonuses', icon: DollarSign, label: 'เงินพิเศษ' },
     ];
 
   const userWithProfile = { ...user, profile };
@@ -3673,7 +3874,9 @@ const AppContent = () => {
                 staffData={staffData}
                 attendance={attendance}
                 advances={advances}
+                bonuses={bonuses}
                 onAddAdvance={() => setShowAdvanceModal(true)}
+                onAddBonus={() => setShowBonusModal(true)}
                 onAddAttendance={() => {
                   setEditingAttendance(null);
                   setShowAttendanceModal(true);
@@ -3706,6 +3909,7 @@ const AppContent = () => {
                 user={userWithProfile}
                 attendance={attendance}
                 advances={advances}
+                bonuses={bonuses}
                 staffData={staffData}
               />
             )}
@@ -3719,6 +3923,12 @@ const AppContent = () => {
               <StaffAdvancesHistory
                 user={userWithProfile}
                 advances={advances}
+              />
+            )}
+            {currentPage === 'bonuses' && (
+              <StaffBonusHistory
+                user={userWithProfile}
+                bonuses={bonuses}
               />
             )}
           </>
@@ -3790,6 +4000,13 @@ const AppContent = () => {
         isOpen={showAdvanceModal}
         onClose={() => setShowAdvanceModal(false)}
         onSave={handleSaveAdvance}
+        staffList={staffList}
+      />
+
+      <BonusModal
+        isOpen={showBonusModal}
+        onClose={() => setShowBonusModal(false)}
+        onSave={handleSaveBonus}
         staffList={staffList}
       />
 
