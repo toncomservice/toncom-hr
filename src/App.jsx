@@ -3452,6 +3452,50 @@ const StaffBonusHistory = ({ user, bonuses }) => {
   );
 };
 
+// ================== WELCOME POPUP ==================
+const WelcomePopup = ({ profile, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3500);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  const isOwner = profile?.role === 'owner';
+  const name = profile?.name || profile?.username || 'ผู้ใช้งาน';
+  const colorClass = isOwner ? 'from-indigo-500 to-purple-600' : 'from-emerald-500 to-teal-600';
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 pointer-events-none">
+      <div
+        className="pointer-events-auto animate-bounce-once bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm w-full"
+        style={{ animation: 'welcomeIn 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards' }}
+      >
+        <div className={`bg-gradient-to-r ${colorClass} p-6 text-center`}>
+          <div className="text-4xl mb-2">{isOwner ? '🙏' : '👋'}</div>
+          <h2 className="text-white text-xl font-bold">ยินดีต้อนรับ!</h2>
+          <p className="text-white/90 text-sm mt-1">{name}</p>
+        </div>
+        <div className="p-5 text-center">
+          <p className="text-gray-700 font-medium">ขอบคุณที่ใช้งานระบบ</p>
+          <p className="text-gray-500 text-sm mt-1">Money Tracker Pro</p>
+          <p className="text-xs text-gray-400 mt-3">Network & CCTV Service</p>
+          <button
+            onClick={onClose}
+            className={`mt-4 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition`}
+          >
+            เริ่มใช้งาน
+          </button>
+        </div>
+      </div>
+      <style>{`
+        @keyframes welcomeIn {
+          from { opacity: 0; transform: scale(0.7) translateY(20px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
+    </div>
+  );
+};
+
 // ================== MAIN APP ==================
 const AppContent = () => {
   // Auth State
@@ -3459,6 +3503,7 @@ const AppContent = () => {
   const [profile, setProfile] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isSupabaseReady, setIsSupabaseReady] = useState(true); // Always ready (hardcoded config)
+  const [showWelcomePopup, setShowWelcomePopup] = useState(false);
 
   // Data State
   const [transactions, setTransactions] = useState(INITIAL_TRANSACTIONS);
@@ -3604,6 +3649,9 @@ const AppContent = () => {
     setUser(profileData);
     setProfile(profileData);
     setIsAuthLoading(false);
+    if (profileData?.role !== 'owner') {
+      setShowWelcomePopup(true);
+    }
   };
 
   const handleLogout = () => {
@@ -3814,6 +3862,10 @@ const AppContent = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Welcome Popup */}
+      {showWelcomePopup && (
+        <WelcomePopup profile={profile} onClose={() => setShowWelcomePopup(false)} />
+      )}
       {/* Header */}
       <header className={`bg-gradient-to-r ${isOwner ? 'from-indigo-600 to-purple-600' : 'from-emerald-600 to-teal-600'} text-white p-4 sticky top-0 z-40`}>
         <div className="flex items-center justify-between">
