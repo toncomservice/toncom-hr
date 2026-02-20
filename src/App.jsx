@@ -1437,7 +1437,7 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl">
         <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-800">บันทึกเงินเบิกล่วงหน้า</h2>
+          <h2 className="text-lg font-bold text-gray-800">บันทึกการเบิกเงิน</h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
             <X className="w-5 h-5" />
           </button>
@@ -1478,7 +1478,7 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-              placeholder="เช่น เบิกล่วงหน้า"
+              placeholder="เช่น เบิกเงิน"
             />
           </div>
 
@@ -1972,7 +1972,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
         <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
         <StatsCard title="ค่าแรงพนักงาน" value={formatCurrency(stats.totalStaffCost)} icon={Users} color="purple" />
-        <StatsCard title="เบิกล่วงหน้า" value={formatCurrency(stats.totalAdvances)} icon={CreditCard} color="orange" />
+        <StatsCard title="เบิกเงิน" value={formatCurrency(stats.totalAdvances)} icon={CreditCard} color="orange" />
       </div>
 
       {/* Net Profit Card */}
@@ -1987,7 +1987,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
             <span className="text-purple-600">-{formatCurrency(stats.totalStaffCost)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>เบิกล่วงหน้า</span>
+            <span>เบิกเงิน</span>
             <span className="text-orange-600">-{formatCurrency(stats.totalAdvances)}</span>
           </div>
           <div className="border-t border-gray-200 pt-2 flex justify-between items-center">
@@ -3170,7 +3170,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
         <StatsCard
           title="เบิกได้อีก"
           value={formatCurrency(stats.remainingAdvance)}
-          subtitle="(เดือนนี้, ≤50%)"
+          subtitle="(เดือนนี้ ≤50%)"
           icon={ArrowUpRight}
           color="indigo"
         />
@@ -3276,7 +3276,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
             <span className="text-red-500">-{formatCurrency(stats.attendance.absentDays * 300)}</span>
           </div>
           <div className="flex justify-between py-2 border-b border-gray-100">
-            <span className="text-gray-600">หักเบิกล่วงหน้า</span>
+            <span className="text-gray-600">หักเบิกเงิน</span>
             <span className="text-red-500">-{formatCurrency(stats.totalAdvance)}</span>
           </div>
           <div className="flex justify-between py-3 bg-emerald-50 rounded-lg px-3 -mx-1">
@@ -3377,7 +3377,7 @@ const StaffAdvancesHistory = ({ user, advances }) => {
               className={`p-4 flex items-center justify-between ${index !== userAdvances.length - 1 ? 'border-b border-gray-100' : ''}`}
             >
               <div>
-                <p className="font-medium text-gray-800">{adv.description || 'เบิกเงินล่วงหน้า'}</p>
+                <p className="font-medium text-gray-800">{adv.description || 'เบิกเงิน'}</p>
                 <p className="text-xs text-gray-500">{formatDate(adv.date)} - เดือน {adv.month}</p>
               </div>
               <span className="text-red-500 font-semibold">-{formatCurrency(adv.amount)}</span>
