@@ -3475,14 +3475,19 @@ const WelcomePopup = ({ profile, onClose }) => {
           <p className="text-white/90 text-sm mt-1">{name}</p>
         </div>
         <div className="p-5 text-center">
-          <p className="text-gray-700 font-medium">ขอบคุณที่ใช้งานระบบ</p>
-          <p className="text-gray-500 text-sm mt-1">Money Tracker Pro</p>
-          <p className="text-xs text-gray-400 mt-3">Network & CCTV Service</p>
+          <p className="text-gray-700 font-semibold leading-relaxed">
+            ขอบคุณที่อยู่เคียงข้างพี่ๆ
+          </p>
+          <p className="text-gray-500 text-sm mt-2 leading-relaxed">
+            สู้กันมาเหนื่อยทั้งเดือน 💪<br />
+            ขอให้ตั้งใจทำงานนะ<br />
+            <span className="text-emerald-600 font-medium">เดี๋ยวพี่พาหาค่าเบีย 🍺</span>
+          </p>
           <button
             onClick={onClose}
-            className={`mt-4 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition`}
+            className={`mt-5 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition`}
           >
-            เริ่มใช้งาน
+            รับทราบ!
           </button>
         </div>
       </div>
