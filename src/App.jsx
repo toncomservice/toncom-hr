@@ -67,7 +67,8 @@ const STORAGE_KEYS = {
   GEMINI_KEY: 'money_tracker_gemini_key',
   OFFLINE_DATA: 'money_tracker_offline_data',
   PENDING_SYNC: 'money_tracker_pending_sync',
-  WAGE_HISTORY: 'money_tracker_wage_history'
+  WAGE_HISTORY: 'money_tracker_wage_history',
+  STAFF_POSITIONS: 'money_tracker_staff_positions'
 };
 
 // Custom Hook สำหรับเชื่อมต่อ Google Sheets
@@ -2555,10 +2556,12 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, staff, st
 };
 
 // Owner Staff Management
-const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage }) => {
+const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition }) => {
   const currentMonth = getCurrentMonth();
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [editingPositionId, setEditingPositionId] = useState(null);
+  const [positionInput, setPositionInput] = useState('');
 
   // คำนวณจำนวนวันทำงาน (รวมทุกวัน)
   const calculateWorkingDays = (startDate, endDate) => {
@@ -2706,8 +2709,47 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                   )}
                 </p>
                 <p className="text-xs text-gray-400">@{staff.username}</p>
+                {staff.role === 'staff' && (
+                  <div className="mt-1">
+                    {editingPositionId === (staff.username || staff.id) ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={positionInput}
+                          onChange={e => setPositionInput(e.target.value)}
+                          placeholder="ระบุตำแหน่ง..."
+                          className="text-xs border border-indigo-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 w-36"
+                          autoFocus
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') { onSavePosition(staff.username || staff.id, positionInput); setEditingPositionId(null); }
+                            if (e.key === 'Escape') setEditingPositionId(null);
+                          }}
+                        />
+                        <button onClick={() => { onSavePosition(staff.username || staff.id, positionInput); setEditingPositionId(null); }} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded">
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button onClick={() => setEditingPositionId(null)} className="p-0.5 text-gray-400 hover:bg-gray-100 rounded">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 group">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${positions[staff.username || staff.id] ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
+                          {positions[staff.username || staff.id] || 'ยังไม่ระบุตำแหน่ง'}
+                        </span>
+                        <button
+                          onClick={() => { setEditingPositionId(staff.username || staff.id); setPositionInput(positions[staff.username || staff.id] || ''); }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-indigo-50 rounded transition"
+                          title="แก้ไขตำแหน่ง"
+                        >
+                          <Edit3 className="w-3 h-3 text-indigo-400" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {staff.role === 'staff' && staff.startDate && (
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-400 mt-0.5">
                     เริ่มงาน: {formatDate(staff.startDate)} ({staff.workingDaysFromStart} วันทำงาน)
                   </p>
                 )}
@@ -2841,7 +2883,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 };
 
 // Staff Dashboard
-const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
+const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positions = {} }) => {
   const currentMonth = getCurrentMonth();
   const [viewMode, setViewMode] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -3051,6 +3093,11 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
       <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 text-white">
         <p className="text-emerald-100">สวัสดี,</p>
         <h2 className="text-2xl font-bold">{displayName}</h2>
+        {positions[username] && (
+          <span className="inline-block mt-1 bg-white/20 text-white text-xs font-medium px-2.5 py-0.5 rounded-full">
+            {positions[username]}
+          </span>
+        )}
         <p className="text-emerald-100 text-sm mt-1">{periodLabel}</p>
       </div>
 
@@ -3579,6 +3626,10 @@ const AppContent = () => {
   const [bonuses, setBonuses] = useState(INITIAL_BONUSES);
   const [staffData, setStaffData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
+  const [staffPositions, setStaffPositions] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS);
+    return saved ? JSON.parse(saved) : {};
+  });
 
   // UI State
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -3814,6 +3865,12 @@ const AppContent = () => {
     await googleSheets.saveBonus(bonus);
   };
 
+  const handleSavePosition = (staffId, position) => {
+    const updated = { ...staffPositions, [staffId]: position };
+    setStaffPositions(updated);
+    localStorage.setItem(STORAGE_KEYS.STAFF_POSITIONS, JSON.stringify(updated));
+  };
+
   const handleSaveAttendance = async (data) => {
     setAttendance(prev => ({
       ...prev,
@@ -4045,6 +4102,8 @@ const AppContent = () => {
                   setEditingWageStaff(staff);
                   setShowWageModal(true);
                 }}
+                positions={staffPositions}
+                onSavePosition={handleSavePosition}
               />
             )}
           </>
@@ -4057,6 +4116,7 @@ const AppContent = () => {
                 advances={advances}
                 bonuses={bonuses}
                 staffData={staffData}
+                positions={staffPositions}
               />
             )}
             {currentPage === 'attendance' && (
