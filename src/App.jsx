@@ -2734,8 +2734,8 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 group">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${positions[staff.username || staff.id] ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
-                          {positions[staff.username || staff.id] || 'ยังไม่ระบุตำแหน่ง'}
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${(positions[staff.username || staff.id] || staff.position) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
+                          {positions[staff.username || staff.id] || staff.position || 'ยังไม่ระบุตำแหน่ง'}
                         </span>
                         <button
                           onClick={() => { setEditingPositionId(staff.username || staff.id); setPositionInput(positions[staff.username || staff.id] || ''); }}
@@ -3093,9 +3093,9 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
       <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 text-white">
         <p className="text-emerald-100">สวัสดี,</p>
         <h2 className="text-2xl font-bold">{displayName}</h2>
-        {positions[username] && (
+        {(positions[username] || staffInfo?.position) && (
           <span className="inline-block mt-1 bg-white/20 text-white text-xs font-medium px-2.5 py-0.5 rounded-full">
-            {positions[username]}
+            {positions[username] || staffInfo?.position}
           </span>
         )}
         <p className="text-emerald-100 text-sm mt-1">{periodLabel}</p>
@@ -3722,6 +3722,7 @@ const AppContent = () => {
               // dailyWage ใช้ค่าล่าสุดจาก wageHistory (ไม่ใช่จาก Sheet ที่อาจถูก overwrite)
               const sortedHistory = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
               const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || wage;
+              const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
               return {
                 id: s.id,
                 username: s.username,
@@ -3733,7 +3734,8 @@ const AppContent = () => {
                 startDate: s.startDate,
                 start_date: s.startDate,
                 active: s.active !== false && s.active !== 'false',
-                wageHistory
+                wageHistory,
+                position: savedPositions[s.username || s.id] || s.position || ''
               };
             }));
           }
@@ -3797,6 +3799,7 @@ const AppContent = () => {
       if (data.advances?.length > 0) setAdvances(data.advances);
       if (data.bonuses?.length > 0) setBonuses(data.bonuses);
       if (data.staff?.length > 0) {
+        const savedPositions2 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
         setStaffData(data.staff.map(s => ({
           id: s.id,
           username: s.username,
@@ -3807,7 +3810,8 @@ const AppContent = () => {
           phone: s.phone,
           startDate: s.startDate,
           start_date: s.startDate,
-          active: s.active !== false && s.active !== 'false'
+          active: s.active !== false && s.active !== 'false',
+          position: savedPositions2[s.username || s.id] || s.position || ''
         })));
       }
     }
@@ -3869,6 +3873,12 @@ const AppContent = () => {
     const updated = { ...staffPositions, [staffId]: position };
     setStaffPositions(updated);
     localStorage.setItem(STORAGE_KEYS.STAFF_POSITIONS, JSON.stringify(updated));
+    setStaffData(prev => prev.map(s => {
+      if ((s.username || s.id) !== staffId) return s;
+      const updatedStaff = { ...s, position };
+      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(updatedStaff.wageHistory || []) }, false);
+      return updatedStaff;
+    }));
   };
 
   const handleSaveAttendance = async (data) => {
