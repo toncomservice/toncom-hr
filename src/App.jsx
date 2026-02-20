@@ -1328,11 +1328,10 @@ const SettingsModal = ({
                   onSaveGeminiKey(tempGeminiKey);
                 }}
                 disabled={tempGeminiKey === geminiApiKey}
-                className={`px-4 py-3 rounded-xl text-sm font-medium transition flex items-center gap-1 ${
-                  tempGeminiKey === geminiApiKey
+                className={`px-4 py-3 rounded-xl text-sm font-medium transition flex items-center gap-1 ${tempGeminiKey === geminiApiKey
                     ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                     : 'bg-indigo-500 text-white hover:bg-indigo-600'
-                }`}
+                  }`}
               >
                 <Save className="w-4 h-4" />
                 บันทึก
@@ -1920,9 +1919,8 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           <button
             key={tab.id}
             onClick={() => setViewMode(tab.id)}
-            className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${
-              viewMode === tab.id ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700'
-            }`}
+            className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${viewMode === tab.id ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700'
+              }`}
           >
             {tab.label}
           </button>
@@ -3099,11 +3097,10 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData }) => {
             <button
               key={mode.key}
               onClick={() => setViewMode(mode.key)}
-              className={`flex-1 py-2 px-1 rounded-lg text-xs font-medium transition-colors ${
-                viewMode === mode.key
+              className={`flex-1 py-2 px-1 rounded-lg text-xs font-medium transition-colors ${viewMode === mode.key
                   ? 'bg-emerald-500 text-white shadow-sm'
                   : 'text-gray-500 hover:bg-gray-100'
-              }`}
+                }`}
             >
               {mode.label}
             </button>
@@ -3454,19 +3451,15 @@ const StaffBonusHistory = ({ user, bonuses }) => {
 
 // ================== WELCOME POPUP ==================
 const WelcomePopup = ({ profile, onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3500);
-    return () => clearTimeout(timer);
-  }, [onClose]);
 
   const isOwner = profile?.role === 'owner';
   const name = profile?.name || profile?.username || 'ผู้ใช้งาน';
   const colorClass = isOwner ? 'from-indigo-500 to-purple-600' : 'from-emerald-500 to-teal-600';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 pointer-events-none">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/50">
       <div
-        className="pointer-events-auto animate-bounce-once bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm w-full"
+        className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm w-full"
         style={{ animation: 'welcomeIn 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards' }}
       >
         <div className={`bg-gradient-to-r ${colorClass} p-6 text-center`}>
@@ -3480,14 +3473,14 @@ const WelcomePopup = ({ profile, onClose }) => {
           </p>
           <p className="text-gray-500 text-sm mt-2 leading-relaxed">
             สู้กันมาเหนื่อยทั้งเดือน 💪<br />
-            ขอให้ตั้งใจทำงานนะ<br />
-            <span className="text-emerald-600 font-medium">เดี๋ยวพี่พาหาค่าเบีย 🍺</span>
+            ขอให้ตั้งใจทำงานนะ สู้ๆ<br />
+            <span className="text-emerald-600 font-medium">เดี๋ยวพี่พาหาค่าเบียร์ 🍺</span>
           </p>
           <button
             onClick={onClose}
             className={`mt-5 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition`}
           >
-            รับทราบ!
+            กดรับทราบ!+เบียร์เย็นนี้
           </button>
         </div>
       </div>
