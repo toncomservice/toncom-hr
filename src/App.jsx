@@ -2376,11 +2376,12 @@ const PasswordResetModal = ({ isOpen, onClose, staff, onReset }) => {
 };
 
 // Wage Edit Modal
-const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, staff, staffList }) => {
+const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteHistoryEntry, staff, staffList }) => {
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [newWage, setNewWage] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
   const [editingEntry, setEditingEntry] = useState(null); // { originalDate, newDate }
+  const [confirmDelete, setConfirmDelete] = useState(null); // { effectiveDate, dailyWage }
 
   useEffect(() => {
     if (staff) {
@@ -2525,7 +2526,7 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, staff, st
                   ) : (
                     <div key={i} className="flex items-center justify-between text-xs group">
                       <span className="text-gray-500">{formatDate(h.effectiveDate)}</span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         <span className="font-medium text-gray-700">{formatCurrency(h.dailyWage)}/วัน</span>
                         <button
                           type="button"
@@ -2535,10 +2536,57 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, staff, st
                         >
                           <Edit3 className="w-3 h-3" />
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelete({ effectiveDate: h.effectiveDate, dailyWage: h.dailyWage })}
+                          className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition opacity-0 group-hover:opacity-100"
+                          title="ลบรายการนี้"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
                       </div>
                     </div>
                   )
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Confirm Delete Popup */}
+          {confirmDelete && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-black/40">
+              <div className="bg-white rounded-2xl shadow-2xl p-5 max-w-xs w-full text-center">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                  <Trash2 className="w-6 h-6 text-red-500" />
+                </div>
+                <h3 className="font-bold text-gray-800 mb-1">ยืนยันการลบ?</h3>
+                <p className="text-sm text-gray-500 mb-1">
+                  ค่าแรง <span className="font-semibold text-gray-700">{formatCurrency(confirmDelete.dailyWage)}/วัน</span>
+                </p>
+                <p className="text-sm text-gray-500 mb-4">
+                  วันที่มีผล <span className="font-semibold text-gray-700">{formatDate(confirmDelete.effectiveDate)}</span>
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(null)}
+                    className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition"
+                  >
+                    ยกเลิก
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onDeleteHistoryEntry) {
+                        onDeleteHistoryEntry({ staffId: selectedStaffId, effectiveDate: confirmDelete.effectiveDate });
+                      }
+                      setConfirmDelete(null);
+                    }}
+                    className="flex-1 py-2.5 bg-red-500 text-white rounded-xl text-sm font-medium hover:bg-red-600 transition"
+                  >
+                    ลบเลย
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -3941,6 +3989,23 @@ const AppContent = () => {
     }));
   };
 
+  const handleDeleteWageHistoryEntry = ({ staffId, effectiveDate }) => {
+    const allWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
+
+    setStaffData(prev => prev.map(s => {
+      if ((s.username || s.id) !== staffId) return s;
+      const newHistory = (s.wageHistory || []).filter(h => h.effectiveDate !== effectiveDate);
+      const sortedHistory = [...newHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+      const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || s.dailyWage;
+      const updatedStaff = { ...s, dailyWage: latestWage, daily_wage: latestWage, wageHistory: newHistory };
+
+      allWageHistory[staffId] = newHistory;
+      localStorage.setItem(STORAGE_KEYS.WAGE_HISTORY, JSON.stringify(allWageHistory));
+      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(newHistory) }, false);
+      return updatedStaff;
+    }));
+  };
+
   const handleResetPassword = async (userId, newPassword) => {
     await resetUserPassword(userId, newPassword);
   };
@@ -4245,6 +4310,7 @@ const AppContent = () => {
         }}
         onSave={handleSaveWage}
         onUpdateHistoryDate={handleUpdateWageHistoryDate}
+        onDeleteHistoryEntry={handleDeleteWageHistoryEntry}
         staff={editingWageStaff}
         staffList={staffData}
       />
