@@ -1330,8 +1330,8 @@ const SettingsModal = ({
                 }}
                 disabled={tempGeminiKey === geminiApiKey}
                 className={`px-4 py-3 rounded-xl text-sm font-medium transition flex items-center gap-1 ${tempGeminiKey === geminiApiKey
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-indigo-500 text-white hover:bg-indigo-600'
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-indigo-500 text-white hover:bg-indigo-600'
                   }`}
               >
                 <Save className="w-4 h-4" />
@@ -3145,8 +3145,8 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
               key={mode.key}
               onClick={() => setViewMode(mode.key)}
               className={`flex-1 py-2 px-1 rounded-lg text-xs font-medium transition-colors ${viewMode === mode.key
-                  ? 'bg-emerald-500 text-white shadow-sm'
-                  : 'text-gray-500 hover:bg-gray-100'
+                ? 'bg-emerald-500 text-white shadow-sm'
+                : 'text-gray-500 hover:bg-gray-100'
                 }`}
             >
               {mode.label}
@@ -3498,16 +3498,16 @@ const StaffBonusHistory = ({ user, bonuses }) => {
 
 // ================== WELCOME POPUP ==================
 const CONFETTI_PARTICLES = [
-  { emoji: '🎊', x: 10,  delay: 0,    dur: 1.1 },
-  { emoji: '🎉', x: 25,  delay: 0.05, dur: 1.0 },
-  { emoji: '✨', x: 40,  delay: 0.1,  dur: 1.2 },
-  { emoji: '🌟', x: 55,  delay: 0.0,  dur: 1.05 },
-  { emoji: '🎊', x: 70,  delay: 0.08, dur: 0.95 },
-  { emoji: '🎉', x: 85,  delay: 0.03, dur: 1.15 },
-  { emoji: '✨', x: 15,  delay: 0.12, dur: 1.0 },
-  { emoji: '🌟', x: 50,  delay: 0.07, dur: 1.1 },
-  { emoji: '🎊', x: 90,  delay: 0.02, dur: 1.2 },
-  { emoji: '🍾', x: 50,  delay: 0,    dur: 0.9, isBottle: true },
+  { emoji: '🎊', x: 10, delay: 0, dur: 1.1 },
+  { emoji: '🎉', x: 25, delay: 0.05, dur: 1.0 },
+  { emoji: '✨', x: 40, delay: 0.1, dur: 1.2 },
+  { emoji: '🌟', x: 55, delay: 0.0, dur: 1.05 },
+  { emoji: '🎊', x: 70, delay: 0.08, dur: 0.95 },
+  { emoji: '🎉', x: 85, delay: 0.03, dur: 1.15 },
+  { emoji: '✨', x: 15, delay: 0.12, dur: 1.0 },
+  { emoji: '🌟', x: 50, delay: 0.07, dur: 1.1 },
+  { emoji: '🎊', x: 90, delay: 0.02, dur: 1.2 },
+  { emoji: '🍾', x: 50, delay: 0, dur: 0.9, isBottle: true },
 ];
 
 const WelcomePopup = ({ profile, onClose }) => {
@@ -3580,7 +3580,7 @@ const WelcomePopup = ({ profile, onClose }) => {
             disabled={celebrating}
             className={`mt-5 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition disabled:opacity-60`}
           >
-            รับทราบ!
+            กดรับทราบ!+เบียร์เย็นๆ 1 ขวด
           </button>
         </div>
       </div>
