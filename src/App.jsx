@@ -3450,14 +3450,66 @@ const StaffBonusHistory = ({ user, bonuses }) => {
 };
 
 // ================== WELCOME POPUP ==================
+const CONFETTI_PARTICLES = [
+  { emoji: '🎊', x: 10,  delay: 0,    dur: 1.1 },
+  { emoji: '🎉', x: 25,  delay: 0.05, dur: 1.0 },
+  { emoji: '✨', x: 40,  delay: 0.1,  dur: 1.2 },
+  { emoji: '🌟', x: 55,  delay: 0.0,  dur: 1.05 },
+  { emoji: '🎊', x: 70,  delay: 0.08, dur: 0.95 },
+  { emoji: '🎉', x: 85,  delay: 0.03, dur: 1.15 },
+  { emoji: '✨', x: 15,  delay: 0.12, dur: 1.0 },
+  { emoji: '🌟', x: 50,  delay: 0.07, dur: 1.1 },
+  { emoji: '🎊', x: 90,  delay: 0.02, dur: 1.2 },
+  { emoji: '🍾', x: 50,  delay: 0,    dur: 0.9, isBottle: true },
+];
+
 const WelcomePopup = ({ profile, onClose }) => {
+  const [celebrating, setCelebrating] = useState(false);
 
   const isOwner = profile?.role === 'owner';
   const name = profile?.name || profile?.username || 'ผู้ใช้งาน';
   const colorClass = isOwner ? 'from-indigo-500 to-purple-600' : 'from-emerald-500 to-teal-600';
 
+  const handleAcknowledge = () => {
+    setCelebrating(true);
+    setTimeout(onClose, 1800);
+  };
+
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/50">
+      {/* Celebration overlay */}
+      {celebrating && (
+        <div className="fixed inset-0 pointer-events-none overflow-hidden z-[110]">
+          {CONFETTI_PARTICLES.map((p, i) => (
+            <span
+              key={i}
+              style={{
+                position: 'absolute',
+                left: `${p.x}%`,
+                bottom: '-10%',
+                fontSize: p.isBottle ? '3rem' : '1.6rem',
+                animation: p.isBottle
+                  ? `bottleShoot ${p.dur}s cubic-bezier(0.2,0.8,0.4,1) ${p.delay}s forwards`
+                  : `confettiFly ${p.dur}s cubic-bezier(0.1,0.8,0.3,1) ${p.delay}s forwards`,
+                display: 'inline-block',
+              }}
+            >
+              {p.emoji}
+            </span>
+          ))}
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ animation: 'congratsIn 0.3s ease 0.3s both' }}
+          >
+            <div className="bg-white/90 rounded-2xl px-8 py-5 text-center shadow-2xl">
+              <p className="text-3xl mb-1">🍾</p>
+              <p className="text-xl font-bold text-emerald-600">ยินดีด้วย!</p>
+              <p className="text-gray-500 text-sm mt-1">สู้ต่อไปนะ 💪</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div
         className="bg-white rounded-2xl shadow-2xl overflow-hidden max-w-sm w-full"
         style={{ animation: 'welcomeIn 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards' }}
@@ -3473,14 +3525,15 @@ const WelcomePopup = ({ profile, onClose }) => {
           </p>
           <p className="text-gray-500 text-sm mt-2 leading-relaxed">
             สู้กันมาเหนื่อยทั้งเดือน 💪<br />
-            ขอให้ตั้งใจทำงานนะ สู้ๆ<br />
-            <span className="text-emerald-600 font-medium">เดี๋ยวพี่พาหาค่าเบียร์ 🍺</span>
+            ขอให้ตั้งใจทำงานนะ<br />
+            <span className="text-emerald-600 font-medium">เดี๋ยวพี่พาหาค่าเบีย 🍺</span>
           </p>
           <button
-            onClick={onClose}
-            className={`mt-5 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition`}
+            onClick={handleAcknowledge}
+            disabled={celebrating}
+            className={`mt-5 w-full py-2.5 rounded-xl text-white text-sm font-medium bg-gradient-to-r ${colorClass} active:opacity-80 transition disabled:opacity-60`}
           >
-            กดรับทราบ!+เบียร์เย็นนี้
+            รับทราบ!
           </button>
         </div>
       </div>
@@ -3488,6 +3541,21 @@ const WelcomePopup = ({ profile, onClose }) => {
         @keyframes welcomeIn {
           from { opacity: 0; transform: scale(0.7) translateY(20px); }
           to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes bottleShoot {
+          0%   { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+          50%  { transform: translateY(-85vh) rotate(-15deg) scale(1.3); opacity: 1; }
+          100% { transform: translateY(-110vh) rotate(-30deg) scale(0.8); opacity: 0; }
+        }
+        @keyframes confettiFly {
+          0%   { transform: translateY(0) rotate(0deg) scale(0.8); opacity: 0; }
+          15%  { opacity: 1; }
+          80%  { opacity: 1; }
+          100% { transform: translateY(-95vh) rotate(540deg) scale(1.2); opacity: 0; }
+        }
+        @keyframes congratsIn {
+          from { opacity: 0; transform: scale(0.6); }
+          to   { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </div>
