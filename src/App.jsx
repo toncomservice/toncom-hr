@@ -3040,8 +3040,16 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
       if (!saved) return [];
       return JSON.parse(saved)[username] || [];
     })(),
-    startDate: user.profile?.start_date || user.start_date || null,
-    start_date: user.profile?.start_date || user.start_date || null,
+    startDate: (() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
+      const sd = saved[username] || user.profile?.start_date || user.start_date || null;
+      return sd ? sd.split('T')[0] : null;
+    })(),
+    start_date: (() => {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
+      const sd = saved[username] || user.profile?.start_date || user.start_date || null;
+      return sd ? sd.split('T')[0] : null;
+    })(),
     position: user.profile?.position || user.position || ''
   };
 
@@ -3874,13 +3882,13 @@ const AppContent = () => {
                   try { wageHistory = JSON.parse(wageHistory); } catch { wageHistory = null; }
                 }
               }
+              // ใช้ startDate จาก localStorage ถ้ามี (override ค่าจาก Sheet ที่อาจเป็น Supabase timestamp)
+              const startDate = savedStartDates[staffKey] || (s.startDate ? s.startDate.split('T')[0] : '');
               if (!wageHistory || !Array.isArray(wageHistory) || wageHistory.length === 0) {
-                wageHistory = [{ dailyWage: wage, effectiveDate: s.startDate || '2025-01-01' }];
+                wageHistory = [{ dailyWage: wage, effectiveDate: startDate || '2025-01-01' }];
               }
               const sortedHistory = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
               const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || wage;
-              // ใช้ startDate จาก localStorage ถ้ามี (override ค่าจาก Sheet ที่อาจเป็น Supabase timestamp)
-              const startDate = savedStartDates[staffKey] || (s.startDate ? s.startDate.split('T')[0] : '');
               return {
                 id: s.id,
                 username: s.username,
@@ -3903,6 +3911,7 @@ const AppContent = () => {
               if (profiles?.length > 0) {
                 const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
                 const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
+                const savedStartDates2 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
                 const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
                 if (staffProfiles.length > 0) {
                   const mappedStaff = staffProfiles.map(p => {
@@ -3910,6 +3919,7 @@ const AppContent = () => {
                     const wageHistory = savedWageHistory[staffKey] || [];
                     const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
                     const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
+                    const startDate2 = savedStartDates2[staffKey] || (p.start_date ? p.start_date.split('T')[0] : p.created_at?.split('T')[0] || '');
                     return {
                       id: p.username,
                       username: p.username,
@@ -3918,8 +3928,8 @@ const AppContent = () => {
                       dailyWage: latestWage,
                       daily_wage: latestWage,
                       phone: p.phone || '',
-                      startDate: p.start_date || p.created_at,
-                      start_date: p.start_date || p.created_at,
+                      startDate: startDate2,
+                      start_date: startDate2,
                       active: p.active !== false,
                       wageHistory,
                       position: savedPositions[staffKey] || p.position || ''
@@ -3963,6 +3973,7 @@ const AppContent = () => {
         if (profiles?.length > 0) {
           const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
           const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
+          const savedStartDates3 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
           const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
           if (staffProfiles.length > 0) {
             setStaffData(staffProfiles.map(p => {
@@ -3970,6 +3981,7 @@ const AppContent = () => {
               const wageHistory = savedWageHistory[staffKey] || [];
               const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
               const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
+              const startDate3 = savedStartDates3[staffKey] || (p.start_date ? p.start_date.split('T')[0] : p.created_at?.split('T')[0] || '');
               return {
                 id: p.username,
                 username: p.username,
@@ -3978,8 +3990,8 @@ const AppContent = () => {
                 dailyWage: latestWage,
                 daily_wage: latestWage,
                 phone: p.phone || '',
-                startDate: p.start_date || p.created_at,
-                start_date: p.start_date || p.created_at,
+                startDate: startDate3,
+                start_date: startDate3,
                 active: p.active !== false,
                 wageHistory,
                 position: savedPositions[staffKey] || p.position || ''
