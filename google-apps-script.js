@@ -75,6 +75,32 @@ function initializeSheet(sheet, sheetName) {
 }
 
 /**
+ * เพิ่ม header ที่ขาดไปใน Staff sheet (รัน 1 ครั้งจาก Script Editor)
+ */
+function migrateStaffSheet() {
+  const sheet = getSheet(SHEET_NAMES.STAFF);
+  const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) {
+    initializeSheet(sheet, SHEET_NAMES.STAFF);
+    Logger.log('Staff sheet was empty, initialized with all headers.');
+    return;
+  }
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const expected = ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory'];
+  let added = 0;
+  expected.forEach((col, i) => {
+    if (!headers.includes(col)) {
+      sheet.getRange(1, lastCol + added + 1).setValue(col);
+      sheet.getRange(1, lastCol + added + 1).setFontWeight('bold');
+      added++;
+      Logger.log('Added missing column: ' + col);
+    }
+  });
+  if (added === 0) Logger.log('All headers already present. No changes needed.');
+  else Logger.log('Migration complete. Added ' + added + ' column(s).');
+}
+
+/**
  * แปลง Sheet data เป็น Array of Objects
  */
 function sheetToObjects(sheet) {
