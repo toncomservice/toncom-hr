@@ -65,7 +65,7 @@ function initializeSheet(sheet, sheetName) {
     [SHEET_NAMES.PROJECTS]: ['id', 'name', 'client', 'status'],
     [SHEET_NAMES.ATTENDANCE]: ['staffId', 'month', 'workDays', 'lateDays', 'absentDays', 'leaveDays'],
     [SHEET_NAMES.ADVANCES]: ['id', 'staffId', 'amount', 'date', 'description', 'month'],
-    [SHEET_NAMES.STAFF]: ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active']
+    [SHEET_NAMES.STAFF]: ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory']
   };
 
   if (headers[sheetName]) {
@@ -285,7 +285,8 @@ function deleteAdvance(id) {
 
 function addStaff(data) {
   const sheet = getSheet(SHEET_NAMES.STAFF);
-  const headers = sheet.getRange(1, 1, 1, 9).getValues()[0];
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const row = headers.map(h => data[h] !== undefined ? data[h] : '');
   sheet.appendRow(row);
   return { success: true, id: data.id };
@@ -295,14 +296,15 @@ function updateStaff(data) {
   const sheet = getSheet(SHEET_NAMES.STAFF);
   const rowIndex = findRowById(sheet, data.id);
 
-  const headers = sheet.getRange(1, 1, 1, 9).getValues()[0];
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   const row = headers.map(h => data[h] !== undefined ? data[h] : '');
 
   if (rowIndex === -1) {
     // ไม่พบ row → INSERT แทน UPDATE (upsert behavior)
     sheet.appendRow(row);
   } else {
-    sheet.getRange(rowIndex, 1, 1, 9).setValues([row]);
+    sheet.getRange(rowIndex, 1, 1, lastCol).setValues([row]);
   }
   return { success: true, id: data.id };
 }
