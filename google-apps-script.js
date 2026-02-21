@@ -28,7 +28,8 @@ const SHEET_NAMES = {
   PROJECTS: 'Projects',
   ATTENDANCE: 'Attendance',
   ADVANCES: 'Advances',
-  STAFF: 'Staff'
+  STAFF: 'Staff',
+  BONUSES: 'Bonuses'
 };
 
 // ================== UTILITY FUNCTIONS ==================
@@ -65,7 +66,8 @@ function initializeSheet(sheet, sheetName) {
     [SHEET_NAMES.PROJECTS]: ['id', 'name', 'client', 'status'],
     [SHEET_NAMES.ATTENDANCE]: ['staffId', 'month', 'workDays', 'lateDays', 'absentDays', 'leaveDays'],
     [SHEET_NAMES.ADVANCES]: ['id', 'staffId', 'amount', 'date', 'description', 'month'],
-    [SHEET_NAMES.STAFF]: ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory', 'position']
+    [SHEET_NAMES.STAFF]: ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory', 'position'],
+    [SHEET_NAMES.BONUSES]: ['id', 'staffId', 'amount', 'date', 'description', 'month']
   };
 
   if (headers[sheetName]) {
@@ -167,7 +169,8 @@ function getAllData() {
     projects: sheetToObjects(getSheet(SHEET_NAMES.PROJECTS)),
     attendance: getAttendanceAsObject(),
     advances: sheetToObjects(getSheet(SHEET_NAMES.ADVANCES)),
-    staff: sheetToObjects(getSheet(SHEET_NAMES.STAFF))
+    staff: sheetToObjects(getSheet(SHEET_NAMES.STAFF)),
+    bonuses: sheetToObjects(getSheet(SHEET_NAMES.BONUSES))
   };
 }
 
@@ -307,6 +310,27 @@ function deleteAdvance(id) {
   return { success: true, id: id };
 }
 
+// -------------------- Bonuses --------------------
+
+function addBonus(data) {
+  const sheet = getSheet(SHEET_NAMES.BONUSES);
+  const lastCol = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const row = headers.map(h => data[h] !== undefined ? data[h] : '');
+  sheet.appendRow(row);
+  return { success: true, id: data.id };
+}
+
+function deleteBonus(id) {
+  const sheet = getSheet(SHEET_NAMES.BONUSES);
+  const rowIndex = findRowById(sheet, id);
+  if (rowIndex === -1) {
+    return { success: false, error: 'Bonus not found' };
+  }
+  sheet.deleteRow(rowIndex);
+  return { success: true, id: id };
+}
+
 // -------------------- Staff --------------------
 
 function addStaff(data) {
@@ -434,6 +458,14 @@ function doPost(e) {
         break;
       case 'deleteAdvance':
         result = deleteAdvance(data.id);
+        break;
+
+      // Bonuses
+      case 'addBonus':
+        result = addBonus(data);
+        break;
+      case 'deleteBonus':
+        result = deleteBonus(data.id);
         break;
 
       // Staff

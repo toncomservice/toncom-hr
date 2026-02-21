@@ -3079,8 +3079,12 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
   const stats = useMemo(() => {
     const userAttendance = attendance[username] || {};
     const dailyWage = staffInfo?.daily_wage || staffInfo?.dailyWage || 0;
-    const startDate = staffInfo?.start_date || staffInfo?.startDate || staffInfo?.created_at;
-    const wageHistory = staffInfo?.wageHistory || [{ dailyWage, effectiveDate: startDate || '2025-01-01' }];
+    const wageHistory = staffInfo?.wageHistory?.length > 0
+      ? staffInfo.wageHistory
+      : [{ dailyWage, effectiveDate: staffInfo?.start_date || staffInfo?.startDate || '2025-01-01' }];
+    const sortedWH = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+    // fallback startDate จาก wageHistory ถ้าไม่ได้ตั้งค่าไว้
+    const startDate = staffInfo?.start_date || staffInfo?.startDate || staffInfo?.created_at || sortedWH[0]?.effectiveDate;
 
     let aggregatedAttendance = { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0 };
     let filteredAdvances = [];
@@ -3451,7 +3455,9 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
           <div className="flex justify-between py-2 border-b border-gray-100">
             <span className="text-gray-600">
               {stats.useWageHistory
-                ? `ค่าแรงรวม (${stats.attendance.workDays} วัน)`
+                ? stats.attendance.workDays > 0
+                  ? `ค่าแรงรวม (${stats.attendance.workDays} วัน)`
+                  : 'ค่าแรงรวม'
                 : `ค่าแรง (${stats.attendance.workDays} วัน x ${formatCurrency(stats.dailyWage)})`
               }
             </span>
@@ -4059,20 +4065,38 @@ const AppContent = () => {
       if (data.advances?.length > 0) setAdvances(data.advances);
       if (data.bonuses?.length > 0) setBonuses(data.bonuses);
       if (data.staff?.length > 0) {
+        const savedWageHistoryR = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
         const savedPositions2 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
-        setStaffData(data.staff.map(s => ({
-          id: s.id,
-          username: s.username,
-          name: s.name,
-          role: s.role,
-          dailyWage: Number(s.dailyWage) || 0,
-          daily_wage: Number(s.dailyWage) || 0,
-          phone: s.phone,
-          startDate: s.startDate,
-          start_date: s.startDate,
-          active: s.active !== false && s.active !== 'false',
-          position: savedPositions2[s.username || s.id] || s.position || ''
-        })));
+        const savedStartDatesR = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
+        setStaffData(data.staff.map(s => {
+          const staffKey = s.username || s.id;
+          const wage = Number(s.dailyWage) || 0;
+          let wh = savedWageHistoryR[staffKey];
+          if (!wh || !Array.isArray(wh) || wh.length === 0) {
+            wh = s.wageHistory;
+            if (typeof wh === 'string') { try { wh = JSON.parse(wh); } catch { wh = null; } }
+          }
+          const sd = savedStartDatesR[staffKey] || (s.startDate ? s.startDate.split('T')[0] : '');
+          if (!wh || !Array.isArray(wh) || wh.length === 0) {
+            wh = [{ dailyWage: wage, effectiveDate: sd || '2025-01-01' }];
+          }
+          const sortedH = [...wh].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+          const latestW = sortedH[sortedH.length - 1]?.dailyWage || wage;
+          return {
+            id: s.id,
+            username: s.username,
+            name: s.name,
+            role: s.role,
+            dailyWage: latestW,
+            daily_wage: latestW,
+            phone: s.phone,
+            startDate: sd,
+            start_date: sd,
+            active: s.active !== false && s.active !== 'false',
+            wageHistory: wh,
+            position: savedPositions2[staffKey] || s.position || ''
+          };
+        }));
       }
     }
   }, [googleSheets]);
