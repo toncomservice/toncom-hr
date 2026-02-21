@@ -72,7 +72,8 @@ const STORAGE_KEYS = {
   OFFLINE_DATA: 'money_tracker_offline_data',
   PENDING_SYNC: 'money_tracker_pending_sync',
   WAGE_HISTORY: 'money_tracker_wage_history',
-  STAFF_POSITIONS: 'money_tracker_staff_positions'
+  STAFF_POSITIONS: 'money_tracker_staff_positions',
+  STAFF_START_DATES: 'money_tracker_staff_start_dates'
 };
 
 // Custom Hook สำหรับเชื่อมต่อ Google Sheets
@@ -419,6 +420,43 @@ const calculateEarningsWithHistory = (wageHistory, startDate, endDate) => {
   }
 
   return totalEarnings;
+};
+
+// คำนวณรายได้จากวันทำงานจริงใน attendance (แม่นยำกว่าใช้วันปฏิทิน)
+const calculateEarningsFromAttendance = (wageHistory, attendanceByMonth) => {
+  if (!wageHistory?.length || !attendanceByMonth) return null;
+  const entries = Object.entries(attendanceByMonth);
+  if (entries.length === 0) return null;
+
+  const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+
+  return entries.reduce((total, [month, data]) => {
+    const workDays = data.workDays || 0;
+    if (!workDays) return total;
+
+    const [y, mo] = month.split('-').map(Number);
+    const monthStart = new Date(y, mo - 1, 1);
+    const monthEnd = new Date(y, mo, 0); // วันสุดท้ายของเดือน
+    const daysInMonth = monthEnd.getDate();
+
+    let monthEarnings = 0;
+    for (let i = 0; i < sorted.length; i++) {
+      const wageStart = new Date(sorted[i].effectiveDate);
+      const wageEnd = sorted[i + 1]
+        ? new Date(new Date(sorted[i + 1].effectiveDate).getTime() - 86400000)
+        : monthEnd;
+
+      const overlapStart = wageStart > monthStart ? wageStart : monthStart;
+      const overlapEnd = wageEnd < monthEnd ? wageEnd : monthEnd;
+
+      if (overlapStart <= overlapEnd) {
+        const overlapDays = Math.floor((overlapEnd - overlapStart) / 86400000) + 1;
+        const workedDays = Math.round(workDays * overlapDays / daysInMonth);
+        monthEarnings += workedDays * sorted[i].dailyWage;
+      }
+    }
+    return total + monthEarnings;
+  }, 0);
 };
 
 // ================== COMPONENTS ==================
@@ -2385,12 +2423,13 @@ const PasswordResetModal = ({ isOpen, onClose, staff, onReset }) => {
 };
 
 // Wage Edit Modal
-const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteHistoryEntry, staff, staffList }) => {
+const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteHistoryEntry, onUpdateStartDate, staff, staffList }) => {
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [newWage, setNewWage] = useState('');
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
   const [editingEntry, setEditingEntry] = useState(null); // { originalDate, newDate }
   const [confirmDelete, setConfirmDelete] = useState(null); // { effectiveDate, dailyWage }
+  const [editStartDate, setEditStartDate] = useState('');
 
   useEffect(() => {
     if (staff) {
@@ -2398,6 +2437,9 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteH
       setNewWage('');
       setEffectiveDate(new Date().toISOString().split('T')[0]);
       setEditingEntry(null);
+      // โหลด startDate จาก staff data (ตัด timestamp ออกให้เหลือแค่ yyyy-mm-dd)
+      const sd = staff.startDate || staff.start_date || '';
+      setEditStartDate(sd ? sd.split('T')[0] : '');
     }
   }, [staff]);
 
@@ -2455,6 +2497,30 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteH
               <p className="text-lg font-bold text-blue-700">{formatCurrency(selectedInfo.dailyWage || selectedInfo.daily_wage || 0)}/วัน</p>
             </div>
           )}
+
+          {/* แก้ไขวันเริ่มงาน */}
+          <div className="bg-gray-50 rounded-xl p-3 space-y-2">
+            <p className="text-xs font-medium text-gray-600">วันเริ่มงาน</p>
+            <div className="flex gap-2 items-center">
+              <input
+                type="date"
+                value={editStartDate}
+                onChange={(e) => setEditStartDate(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (editStartDate && selectedStaffId && onUpdateStartDate) {
+                    onUpdateStartDate({ staffId: selectedStaffId, startDate: editStartDate });
+                  }
+                }}
+                className="px-3 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition whitespace-nowrap"
+              >
+                บันทึก
+              </button>
+            </div>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">ค่าแรงใหม่ (บาท/วัน)</label>
@@ -2657,7 +2723,8 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
         const staffAttendance = attendance[staff.username] || {};
         const allStaffBonuses = (bonuses || []).filter(b => b.staffId === staff.username);
         const totalAllBonuses = allStaffBonuses.reduce((sum, b) => sum + b.amount, 0);
-        const totalWageEarnings = calculateEarningsWithHistory(wageHistory, startDate, today);
+        const totalWageEarnings = calculateEarningsFromAttendance(wageHistory, staffAttendance)
+          ?? calculateEarningsWithHistory(wageHistory, startDate, today);
         const totalEarnings = totalWageEarnings + totalAllBonuses;
 
         // คำนวณเงินเบิกทั้งหมด (ทุกเดือน) จาก Sheet
@@ -3083,7 +3150,8 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
       filteredAdvances = advances.filter(a => a.staffId === username);
       filteredBonuses = userBonuses;
       const today = new Date().toISOString().split('T')[0];
-      totalEarningsFromHistory = calculateEarningsWithHistory(wageHistory, startDate, today);
+      totalEarningsFromHistory = calculateEarningsFromAttendance(wageHistory, userAttendance)
+        ?? calculateEarningsWithHistory(wageHistory, startDate, today);
     }
 
     const totalAdvance = filteredAdvances.reduce((sum, a) => sum + a.amount, 0);
@@ -3114,8 +3182,9 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
     }, 0);
     const totalAllBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
     const todayStr = new Date().toISOString().split('T')[0];
-    // totalWageEarnings = เฉพาะค่าแรงตาม wageHistory (ไม่รวมโบนัส)
-    const totalWageEarnings = calculateEarningsWithHistory(wageHistory, startDate, todayStr);
+    // totalWageEarnings = เฉพาะค่าแรงตาม wageHistory (ใช้วันทำงานจริง)
+    const totalWageEarnings = calculateEarningsFromAttendance(wageHistory, userAttendance)
+      ?? calculateEarningsWithHistory(wageHistory, startDate, todayStr);
     // totalEarnings = ค่าแรง + เงินพิเศษสะสมทั้งหมด
     const totalEarnings = totalWageEarnings + totalAllBonuses;
     const netTotalEarnings = totalEarnings - totalAllAdvances - totalAllDeductions;
@@ -3794,6 +3863,7 @@ const AppContent = () => {
             // โหลด staff จาก Google Sheets ปกติ
             const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
             const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
+            const savedStartDates = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
             setStaffData(data.staff.map(s => {
               const staffKey = s.username || s.id;
               const wage = Number(s.dailyWage) || 0;
@@ -3809,6 +3879,8 @@ const AppContent = () => {
               }
               const sortedHistory = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
               const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || wage;
+              // ใช้ startDate จาก localStorage ถ้ามี (override ค่าจาก Sheet ที่อาจเป็น Supabase timestamp)
+              const startDate = savedStartDates[staffKey] || (s.startDate ? s.startDate.split('T')[0] : '');
               return {
                 id: s.id,
                 username: s.username,
@@ -3817,8 +3889,8 @@ const AppContent = () => {
                 dailyWage: latestWage,
                 daily_wage: latestWage,
                 phone: s.phone,
-                startDate: s.startDate,
-                start_date: s.startDate,
+                startDate,
+                start_date: startDate,
                 active: s.active !== false && s.active !== 'false',
                 wageHistory,
                 position: savedPositions[staffKey] || s.position || ''
@@ -4134,6 +4206,21 @@ const AppContent = () => {
     }));
   };
 
+  const handleUpdateStartDate = ({ staffId, startDate }) => {
+    // บันทึกลง localStorage
+    const allStartDates = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
+    allStartDates[staffId] = startDate;
+    localStorage.setItem(STORAGE_KEYS.STAFF_START_DATES, JSON.stringify(allStartDates));
+    // อัปเดต staffData state
+    setStaffData(prev => prev.map(s => {
+      if ((s.username || s.id) !== staffId) return s;
+      const updatedStaff = { ...s, startDate, start_date: startDate };
+      // Sync to Google Sheets
+      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(updatedStaff.wageHistory || []) }, false);
+      return updatedStaff;
+    }));
+  };
+
   const handleResetPassword = async (userId, newPassword) => {
     await resetUserPassword(userId, newPassword);
   };
@@ -4443,6 +4530,7 @@ const AppContent = () => {
         onSave={handleSaveWage}
         onUpdateHistoryDate={handleUpdateWageHistoryDate}
         onDeleteHistoryEntry={handleDeleteWageHistoryEntry}
+        onUpdateStartDate={handleUpdateStartDate}
         staff={editingWageStaff}
         staffList={staffData}
       />
