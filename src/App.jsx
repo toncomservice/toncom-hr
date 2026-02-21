@@ -3741,8 +3741,6 @@ const AppContent = () => {
     advances: INITIAL_ADVANCES
   }, isSupabaseReady && user);
 
-  // flag: true เมื่อ Google Sheets Staff sheet ว่างจริง (ใช้ควบคุมการ sync ครั้งเดียว)
-  const staffSheetEmptyRef = useRef(false);
 
   // Supabase is always configured (hardcoded)
 
@@ -3791,14 +3789,14 @@ const AppContent = () => {
           if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
           if (data.advances?.length > 0) setAdvances(data.advances);
           if (data.bonuses?.length > 0) setBonuses(data.bonuses);
-          // Load staff data from Google Sheets
+
           if (data.staff?.length > 0) {
-            staffSheetEmptyRef.current = false; // Sheet มีข้อมูล ไม่ต้อง sync
+            // โหลด staff จาก Google Sheets ปกติ
             const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
+            const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
             setStaffData(data.staff.map(s => {
               const staffKey = s.username || s.id;
               const wage = Number(s.dailyWage) || 0;
-              // ลำดับความสำคัญ: localStorage > Google Sheets > สร้างจาก dailyWage
               let wageHistory = savedWageHistory[staffKey];
               if (!wageHistory || !Array.isArray(wageHistory) || wageHistory.length === 0) {
                 wageHistory = s.wageHistory;
@@ -3809,10 +3807,8 @@ const AppContent = () => {
               if (!wageHistory || !Array.isArray(wageHistory) || wageHistory.length === 0) {
                 wageHistory = [{ dailyWage: wage, effectiveDate: s.startDate || '2025-01-01' }];
               }
-              // dailyWage ใช้ค่าล่าสุดจาก wageHistory (ไม่ใช่จาก Sheet ที่อาจถูก overwrite)
               const sortedHistory = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
               const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || wage;
-              const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
               return {
                 id: s.id,
                 username: s.username,
@@ -3825,11 +3821,58 @@ const AppContent = () => {
                 start_date: s.startDate,
                 active: s.active !== false && s.active !== 'false',
                 wageHistory,
-                position: savedPositions[s.username || s.id] || s.position || ''
+                position: savedPositions[staffKey] || s.position || ''
               };
             }));
-          } else {
-            staffSheetEmptyRef.current = true; // Staff sheet ว่าง → ให้ profiles fallback sync
+          } else if (user.role === 'owner') {
+            // Staff sheet ว่าง + owner login → โหลดจาก Supabase แล้ว sync ขึ้น Google Sheets ทันที
+            try {
+              const profiles = await getAllProfiles();
+              if (profiles?.length > 0) {
+                const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
+                const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
+                const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
+                if (staffProfiles.length > 0) {
+                  const mappedStaff = staffProfiles.map(p => {
+                    const staffKey = p.username || p.id;
+                    const wageHistory = savedWageHistory[staffKey] || [];
+                    const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+                    const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
+                    return {
+                      id: p.username,
+                      username: p.username,
+                      name: p.name,
+                      role: p.role || 'staff',
+                      dailyWage: latestWage,
+                      daily_wage: latestWage,
+                      phone: p.phone || '',
+                      startDate: p.start_date || p.created_at,
+                      start_date: p.start_date || p.created_at,
+                      active: p.active !== false,
+                      wageHistory,
+                      position: savedPositions[staffKey] || p.position || ''
+                    };
+                  });
+                  setStaffData(mappedStaff);
+                  // sync ขึ้น Google Sheets Staff sheet (id = username เพื่อให้ตรงกับ Advances)
+                  mappedStaff.forEach(s => {
+                    googleSheets.saveStaff({
+                      id: s.username,
+                      username: s.username,
+                      name: s.name,
+                      role: s.role,
+                      dailyWage: s.dailyWage,
+                      phone: s.phone,
+                      startDate: s.startDate,
+                      active: s.active,
+                      wageHistory: JSON.stringify(s.wageHistory)
+                    }, true);
+                  });
+                }
+              }
+            } catch (err) {
+              console.error('Error syncing staff to Google Sheets:', err);
+            }
           }
           setDataLoaded(true);
         }
@@ -3838,12 +3881,11 @@ const AppContent = () => {
     loadData();
   }, [googleSheets.scriptUrl, user]);
 
-  // Fallback: โหลด staffData จาก Supabase profiles เมื่อ Google Sheets ไม่มีข้อมูล
+  // Fallback: โหลด staffData จาก Supabase profiles เมื่อ Google Sheets ไม่มีข้อมูล (สำหรับ staff role)
   useEffect(() => {
     if (!user || staffData.length > 0) return;
-    // รอ 2 วินาทีให้ Google Sheets โหลดก่อน แล้วค่อย fallback
     const timer = setTimeout(async () => {
-      if (staffData.length > 0) return; // ถ้าโหลดแล้ว ไม่ต้อง fallback
+      if (staffData.length > 0) return;
       try {
         const profiles = await getAllProfiles();
         if (profiles?.length > 0) {
@@ -3851,13 +3893,13 @@ const AppContent = () => {
           const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
           const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
           if (staffProfiles.length > 0) {
-            const mappedStaff = staffProfiles.map(p => {
+            setStaffData(staffProfiles.map(p => {
               const staffKey = p.username || p.id;
               const wageHistory = savedWageHistory[staffKey] || [];
               const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
               const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
               return {
-                id: p.id,
+                id: p.username,
                 username: p.username,
                 name: p.name,
                 role: p.role || 'staff',
@@ -3870,26 +3912,7 @@ const AppContent = () => {
                 wageHistory,
                 position: savedPositions[staffKey] || p.position || ''
               };
-            });
-            setStaffData(mappedStaff);
-
-            // sync ขึ้น Google Sheets เฉพาะเมื่อ owner login และ Staff sheet ว่างจริง (ครั้งเดียวเท่านั้น)
-            if (user?.role === 'owner' && googleSheets.scriptUrl && staffSheetEmptyRef.current) {
-              staffSheetEmptyRef.current = false; // reset ทันทีเพื่อป้องกัน sync ซ้ำ
-              mappedStaff.forEach(s => {
-                googleSheets.saveStaff({
-                  id: s.username,   // ใช้ username เป็น id เพื่อให้ตรงกับ Advances/Attendance sheet
-                  username: s.username,
-                  name: s.name,
-                  role: s.role,
-                  dailyWage: s.dailyWage,
-                  phone: s.phone,
-                  startDate: s.startDate,
-                  active: s.active,
-                  wageHistory: JSON.stringify(s.wageHistory)
-                }, true); // isNew=true → addStaff (INSERT ลง Staff sheet)
-              });
-            }
+            }));
           }
         }
       } catch (err) {
