@@ -63,6 +63,9 @@ class ErrorBoundary extends React.Component {
 }
 
 // ================== GOOGLE SHEETS INTEGRATION ==================
+// Google Script URL คงที่ — ฝังไว้เพื่อให้ทุกเครื่องเข้าถึงได้อัตโนมัติ
+const DEFAULT_GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyJUwOE_Cy9fj-txRNs7o5YKMZeTJvWmdT6bliK0utSapFStRxI5ZY4ObmCY9Rh3nug/exec';
+
 const STORAGE_KEYS = {
   SCRIPT_URL: 'money_tracker_script_url',
   GEMINI_KEY: 'money_tracker_gemini_key',
@@ -74,7 +77,9 @@ const STORAGE_KEYS = {
 
 // Custom Hook สำหรับเชื่อมต่อ Google Sheets
 const useGoogleSheets = (initialData, isReady = false) => {
-  const [scriptUrl, setScriptUrl] = useState('');
+  const [scriptUrl, setScriptUrl] = useState(
+    localStorage.getItem(STORAGE_KEYS.SCRIPT_URL) || DEFAULT_GOOGLE_SCRIPT_URL
+  );
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -85,7 +90,7 @@ const useGoogleSheets = (initialData, isReady = false) => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // โหลด URL จาก database เมื่อ ready
+  // โหลด URL จาก database เมื่อ ready (ถ้ามีค่าใหม่จาก Supabase ให้ใช้แทน)
   useEffect(() => {
     if (!isReady) return;
     const loadUrl = async () => {
@@ -94,15 +99,10 @@ const useGoogleSheets = (initialData, isReady = false) => {
         if (url) {
           setScriptUrl(url);
           localStorage.setItem(STORAGE_KEYS.SCRIPT_URL, url);
-        } else {
-          // fallback: โหลดจาก localStorage ถ้า Supabase ไม่มีข้อมูล
-          const cached = localStorage.getItem(STORAGE_KEYS.SCRIPT_URL);
-          if (cached) setScriptUrl(cached);
         }
+        // ถ้า Supabase ไม่มี ใช้ค่าที่ตั้งไว้แล้วใน useState (DEFAULT หรือ localStorage)
       } catch (err) {
         console.error('Error loading Google Script URL:', err);
-        const cached = localStorage.getItem(STORAGE_KEYS.SCRIPT_URL);
-        if (cached) setScriptUrl(cached);
       }
     };
     loadUrl();
