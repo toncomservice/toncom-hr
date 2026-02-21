@@ -1892,18 +1892,33 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const totalIncome = filtered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
     const totalExpense = filtered.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
 
-    // ค่าแรงพนักงาน (รวมทุกเดือนในช่วง)
-    const totalStaffCost = (staffData || [])
+    // จำนวนวันในช่วงที่เลือก (สำหรับ custom/week)
+    const daysInRange = dateRange.from
+      ? Math.max(1, Math.floor((new Date(dateRange.to) - new Date(dateRange.from)) / 86400000) + 1)
+      : null;
+
+    // ค่าแรงเตรียมจ่ายแต่ละคน พร้อม breakdown
+    const useAttendance = viewMode === 'month' || viewMode === 'all';
+    const staffWageBreakdown = (staffData || [])
       .filter(s => s.active !== false && s.role !== 'owner')
-      .reduce((sum, staff) => {
+      .map(staff => {
         const dailyWage = staff.daily_wage || staff.dailyWage || 0;
-        return sum + monthsInRange.reduce((mSum, month) => {
-          const att = attendance?.[staff.username]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0 };
-          const gross = dailyWage * att.workDays;
-          const ded = (att.lateDays * 50) + (att.absentDays * 300);
-          return mSum + gross - ded;
-        }, 0);
-      }, 0);
+        let wageCost = 0;
+        let workDays = 0;
+        if (useAttendance) {
+          monthsInRange.forEach(month => {
+            const att = attendance?.[staff.username]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0 };
+            workDays += att.workDays;
+            wageCost += (dailyWage * att.workDays) - (att.lateDays * 50) - (att.absentDays * 300);
+          });
+        } else {
+          workDays = daysInRange || 1;
+          wageCost = dailyWage * workDays;
+        }
+        return { name: staff.name, dailyWage, workDays, wageCost };
+      });
+
+    const totalStaffCost = staffWageBreakdown.reduce((sum, s) => sum + s.wageCost, 0);
 
     // เงินเบิกพนักงาน
     const totalAdvances = advances
@@ -1917,8 +1932,8 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const netProfit = profit - totalStaffCost - totalAdvances;
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
 
-    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, activeProjects };
-  }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange]);
+    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, activeProjects, staffWageBreakdown, daysInRange, useAttendance };
+  }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
   const filteredTransactions = useMemo(() => {
@@ -2019,7 +2034,12 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
         <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
-        <StatsCard title="ค่าแรงพนักงาน" value={formatCurrency(stats.totalStaffCost)} icon={Users} color="purple" />
+        <StatsCard
+          title={stats.useAttendance ? 'ค่าแรงพนักงาน' : 'ค่าแรงเตรียมจ่าย'}
+          value={formatCurrency(stats.totalStaffCost)}
+          icon={Users}
+          color="purple"
+        />
         <StatsCard title="เบิกเงิน" value={formatCurrency(stats.totalAdvances)} icon={CreditCard} color="orange" />
       </div>
 
@@ -2031,7 +2051,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
             <span className={stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatCurrency(stats.profit)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>ค่าแรงพนักงาน</span>
+            <span>{stats.useAttendance ? 'ค่าแรงพนักงาน' : `ค่าแรงเตรียมจ่าย${stats.daysInRange ? ` (${stats.daysInRange} วัน)` : ''}`}</span>
             <span className="text-purple-600">-{formatCurrency(stats.totalStaffCost)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
@@ -2047,6 +2067,34 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
         </div>
       </div>
+
+      {/* ค่าแรงเตรียมจ่าย Breakdown */}
+      {stats.staffWageBreakdown?.length > 0 && (
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <Users className="w-5 h-5 text-purple-500" />
+            {stats.useAttendance ? 'ค่าแรงพนักงาน (ตามวันทำงานจริง)' : `ค่าแรงเตรียมจ่าย${stats.daysInRange ? ` (${stats.daysInRange} วัน)` : ''}`}
+          </h3>
+          <div className="space-y-2">
+            {stats.staffWageBreakdown.map((s, i) => (
+              <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div>
+                  <p className="text-sm font-medium text-gray-700">{s.name}</p>
+                  <p className="text-xs text-gray-400">
+                    {s.workDays} วัน × {formatCurrency(s.dailyWage)}/วัน
+                    {!stats.useAttendance && <span className="text-gray-300 ml-1">(ประมาณการ)</span>}
+                  </p>
+                </div>
+                <span className="font-semibold text-purple-600">{formatCurrency(s.wageCost)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between items-center pt-1 border-t border-purple-100">
+              <span className="text-sm font-medium text-gray-600">รวมค่าแรง</span>
+              <span className="font-bold text-purple-700">{formatCurrency(stats.totalStaffCost)}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Transactions List */}
       <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
