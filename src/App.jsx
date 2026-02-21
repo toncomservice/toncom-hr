@@ -2940,7 +2940,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 };
 
 // Staff Dashboard
-const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positions = {} }) => {
+const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positions = {}, onRefresh, isLoading, scriptUrl, dataLoaded }) => {
   const currentMonth = getCurrentMonth();
   const [viewMode, setViewMode] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -3173,8 +3173,31 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
     { key: 'all', label: 'ทั้งหมด' }
   ];
 
+  const attendanceCount = Object.keys(attendance[username] || {}).length;
+  const advancesCount = advances.filter(a => a.staffId === username).length;
+
   return (
     <div className="space-y-6">
+      {/* Debug / Status Panel */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-600 space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-gray-700">สถานะระบบ</span>
+          <button
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="px-3 py-1 bg-emerald-500 text-white rounded-lg text-xs disabled:opacity-50"
+          >
+            {isLoading ? 'กำลังโหลด...' : 'รีเฟรชข้อมูล'}
+          </button>
+        </div>
+        <div>ผู้ใช้: <span className="font-mono text-blue-600">{username}</span></div>
+        <div>ข้อมูลพนักงาน: <span className={staffData.find(s=>s.username===username) ? 'text-green-600' : 'text-orange-500'}>{staffData.find(s=>s.username===username) ? 'พบแล้ว' : 'ใช้ fallback'}</span></div>
+        <div>บันทึกเวลา: <span className="font-mono">{attendanceCount} เดือน</span></div>
+        <div>รายการเบิกเงิน: <span className="font-mono">{advancesCount} รายการ</span></div>
+        <div>Script URL: <span className={scriptUrl ? 'text-green-600' : 'text-red-600'}>{scriptUrl ? 'มีค่า' : 'ไม่มี'}</span></div>
+        <div>โหลดข้อมูลแล้ว: <span className={dataLoaded ? 'text-green-600' : 'text-orange-500'}>{dataLoaded ? 'ใช่' : 'ยังไม่โหลด'}</span></div>
+      </div>
+
       {/* Greeting */}
       <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl p-5 text-white">
         <p className="text-emerald-100">สวัสดี,</p>
@@ -4272,6 +4295,10 @@ const AppContent = () => {
                 bonuses={bonuses}
                 staffData={staffData}
                 positions={staffPositions}
+                onRefresh={handleFetchData}
+                isLoading={googleSheets.isLoading}
+                scriptUrl={googleSheets.scriptUrl}
+                dataLoaded={dataLoaded}
               />
             )}
             {currentPage === 'attendance' && (
