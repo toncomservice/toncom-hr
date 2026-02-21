@@ -65,7 +65,7 @@ function initializeSheet(sheet, sheetName) {
     [SHEET_NAMES.PROJECTS]: ['id', 'name', 'client', 'status'],
     [SHEET_NAMES.ATTENDANCE]: ['staffId', 'month', 'workDays', 'lateDays', 'absentDays', 'leaveDays'],
     [SHEET_NAMES.ADVANCES]: ['id', 'staffId', 'amount', 'date', 'description', 'month'],
-    [SHEET_NAMES.STAFF]: ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory']
+    [SHEET_NAMES.STAFF]: ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory', 'position']
   };
 
   if (headers[sheetName]) {
@@ -86,7 +86,7 @@ function migrateStaffSheet() {
     return;
   }
   const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-  const expected = ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory'];
+  const expected = ['id', 'username', 'passwordHash', 'name', 'role', 'dailyWage', 'phone', 'startDate', 'active', 'wageHistory', 'position'];
   let added = 0;
   expected.forEach((col, i) => {
     if (!headers.includes(col)) {
