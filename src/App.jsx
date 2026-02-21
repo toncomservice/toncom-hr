@@ -3845,7 +3845,7 @@ const AppContent = () => {
           const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
           const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
           if (staffProfiles.length > 0) {
-            setStaffData(staffProfiles.map(p => {
+            const mappedStaff = staffProfiles.map(p => {
               const staffKey = p.username || p.id;
               const wageHistory = savedWageHistory[staffKey] || [];
               const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
@@ -3864,7 +3864,25 @@ const AppContent = () => {
                 wageHistory,
                 position: savedPositions[staffKey] || p.position || ''
               };
-            }));
+            });
+            setStaffData(mappedStaff);
+
+            // ถ้า owner login และ Staff sheet ว่าง ให้ sync ข้อมูลพนักงาน+ค่าแรงขึ้น Google Sheets
+            if (user?.role === 'owner' && googleSheets.scriptUrl) {
+              mappedStaff.forEach(s => {
+                googleSheets.saveStaff({
+                  id: s.id,
+                  username: s.username,
+                  name: s.name,
+                  role: s.role,
+                  dailyWage: s.dailyWage,
+                  phone: s.phone,
+                  startDate: s.startDate,
+                  active: s.active,
+                  wageHistory: JSON.stringify(s.wageHistory)
+                }, true); // isNew=true → addStaff (INSERT ลง Staff sheet)
+              });
+            }
           }
         }
       } catch (err) {

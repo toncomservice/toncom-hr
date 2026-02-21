@@ -295,13 +295,15 @@ function updateStaff(data) {
   const sheet = getSheet(SHEET_NAMES.STAFF);
   const rowIndex = findRowById(sheet, data.id);
 
-  if (rowIndex === -1) {
-    return { success: false, error: 'Staff not found' };
-  }
-
   const headers = sheet.getRange(1, 1, 1, 9).getValues()[0];
   const row = headers.map(h => data[h] !== undefined ? data[h] : '');
-  sheet.getRange(rowIndex, 1, 1, 9).setValues([row]);
+
+  if (rowIndex === -1) {
+    // ไม่พบ row → INSERT แทน UPDATE (upsert behavior)
+    sheet.appendRow(row);
+  } else {
+    sheet.getRange(rowIndex, 1, 1, 9).setValues([row]);
+  }
   return { success: true, id: data.id };
 }
 
