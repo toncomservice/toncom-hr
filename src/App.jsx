@@ -14,6 +14,7 @@ import {
   saveSupabaseConfig,
   resetSupabaseInstance,
   getProfile,
+  getAllProfiles,
   resetUserPassword,
   verifyPassword,
   getProfileByUsername,
@@ -92,9 +93,16 @@ const useGoogleSheets = (initialData, isReady = false) => {
         const url = await getGoogleScriptUrl();
         if (url) {
           setScriptUrl(url);
+          localStorage.setItem(STORAGE_KEYS.SCRIPT_URL, url);
+        } else {
+          // fallback: โหลดจาก localStorage ถ้า Supabase ไม่มีข้อมูล
+          const cached = localStorage.getItem(STORAGE_KEYS.SCRIPT_URL);
+          if (cached) setScriptUrl(cached);
         }
       } catch (err) {
         console.error('Error loading Google Script URL:', err);
+        const cached = localStorage.getItem(STORAGE_KEYS.SCRIPT_URL);
+        if (cached) setScriptUrl(cached);
       }
     };
     loadUrl();
@@ -106,9 +114,10 @@ const useGoogleSheets = (initialData, isReady = false) => {
 
   const saveScriptUrl = useCallback(async (url) => {
     setScriptUrl(url);
+    localStorage.setItem(STORAGE_KEYS.SCRIPT_URL, url); // บันทึก localStorage ทันที
     setIsConnected(false);
     setError(null);
-    // บันทึกลง database
+    // บันทึกลง database (สำหรับ cross-device sync)
     try {
       await saveGoogleScriptUrl(url);
     } catch (err) {
@@ -2937,8 +2946,37 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
 
-  const username = user.profile?.username || user.email?.split('@')[0];
-  const staffInfo = staffData.find(s => s.username === username || s.id === user.id);
+  const username = user.profile?.username || user.username || user.email?.split('@')[0];
+  const staffInfo = staffData.find(s => s.username === username || s.id === user.id) || {
+    id: user.id,
+    username,
+    name: user.profile?.name || user.name || username,
+    role: 'staff',
+    dailyWage: (() => {
+      const saved = localStorage.getItem('money_tracker_wage_history');
+      if (!saved) return 0;
+      const history = JSON.parse(saved)[username];
+      if (!history?.length) return 0;
+      const sorted = [...history].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+      return sorted[sorted.length - 1]?.dailyWage || 0;
+    })(),
+    daily_wage: (() => {
+      const saved = localStorage.getItem('money_tracker_wage_history');
+      if (!saved) return 0;
+      const history = JSON.parse(saved)[username];
+      if (!history?.length) return 0;
+      const sorted = [...history].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+      return sorted[sorted.length - 1]?.dailyWage || 0;
+    })(),
+    wageHistory: (() => {
+      const saved = localStorage.getItem('money_tracker_wage_history');
+      if (!saved) return [];
+      return JSON.parse(saved)[username] || [];
+    })(),
+    startDate: user.profile?.start_date || user.start_date || null,
+    start_date: user.profile?.start_date || user.start_date || null,
+    position: user.profile?.position || user.position || ''
+  };
 
   // รายการเดือนที่มีข้อมูล
   const availableMonths = useMemo(() => {
@@ -3106,7 +3144,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
     };
   }, [user, attendance, advances, bonuses, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo, currentMonth]);
 
-  const displayName = user.profile?.name || user.email?.split('@')[0] || 'พนักงาน';
+  const displayName = staffInfo?.name || user.profile?.name || user.name || user.email?.split('@')[0] || 'พนักงาน';
 
   // ข้อความแสดง period ที่เลือก
   const periodLabel = useMemo(() => {
@@ -3395,7 +3433,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
 
 // Staff Attendance History
 const StaffAttendanceHistory = ({ user, attendance }) => {
-  const username = user.profile?.username || user.email?.split('@')[0];
+  const username = user.profile?.username || user.username || user.email?.split('@')[0];
   const userAttendance = attendance[username] || {};
   const months = Object.keys(userAttendance).sort().reverse();
 
@@ -3444,7 +3482,7 @@ const StaffAttendanceHistory = ({ user, attendance }) => {
 
 // Staff Advances History
 const StaffAdvancesHistory = ({ user, advances }) => {
-  const username = user.profile?.username || user.email?.split('@')[0];
+  const username = user.profile?.username || user.username || user.email?.split('@')[0];
   const userAdvances = advances.filter(a => a.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
   const totalAdvances = userAdvances.reduce((sum, a) => sum + a.amount, 0);
 
@@ -3486,7 +3524,7 @@ const StaffAdvancesHistory = ({ user, advances }) => {
 
 // Staff Bonus History
 const StaffBonusHistory = ({ user, bonuses }) => {
-  const username = user.profile?.username || user.email?.split('@')[0];
+  const username = user.profile?.username || user.username || user.email?.split('@')[0];
   const userBonuses = (bonuses || []).filter(b => b.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
   const totalBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
 
@@ -3793,6 +3831,48 @@ const AppContent = () => {
     };
     loadData();
   }, [googleSheets.scriptUrl, user]);
+
+  // Fallback: โหลด staffData จาก Supabase profiles เมื่อ Google Sheets ไม่มีข้อมูล
+  useEffect(() => {
+    if (!user || staffData.length > 0) return;
+    // รอ 2 วินาทีให้ Google Sheets โหลดก่อน แล้วค่อย fallback
+    const timer = setTimeout(async () => {
+      if (staffData.length > 0) return; // ถ้าโหลดแล้ว ไม่ต้อง fallback
+      try {
+        const profiles = await getAllProfiles();
+        if (profiles?.length > 0) {
+          const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
+          const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
+          const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
+          if (staffProfiles.length > 0) {
+            setStaffData(staffProfiles.map(p => {
+              const staffKey = p.username || p.id;
+              const wageHistory = savedWageHistory[staffKey] || [];
+              const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+              const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
+              return {
+                id: p.id,
+                username: p.username,
+                name: p.name,
+                role: p.role || 'staff',
+                dailyWage: latestWage,
+                daily_wage: latestWage,
+                phone: p.phone || '',
+                startDate: p.start_date || p.created_at,
+                start_date: p.start_date || p.created_at,
+                active: p.active !== false,
+                wageHistory,
+                position: savedPositions[staffKey] || p.position || ''
+              };
+            }));
+          }
+        }
+      } catch (err) {
+        console.error('Error loading staff from profiles fallback:', err);
+      }
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [user, staffData.length]);
 
   // Load Gemini API Key from database
   useEffect(() => {
