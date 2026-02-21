@@ -3741,6 +3741,9 @@ const AppContent = () => {
     advances: INITIAL_ADVANCES
   }, isSupabaseReady && user);
 
+  // flag: true เมื่อ Google Sheets Staff sheet ว่างจริง (ใช้ควบคุมการ sync ครั้งเดียว)
+  const staffSheetEmptyRef = useRef(false);
+
   // Supabase is always configured (hardcoded)
 
   // Check session from localStorage
@@ -3790,6 +3793,7 @@ const AppContent = () => {
           if (data.bonuses?.length > 0) setBonuses(data.bonuses);
           // Load staff data from Google Sheets
           if (data.staff?.length > 0) {
+            staffSheetEmptyRef.current = false; // Sheet มีข้อมูล ไม่ต้อง sync
             const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
             setStaffData(data.staff.map(s => {
               const staffKey = s.username || s.id;
@@ -3824,6 +3828,8 @@ const AppContent = () => {
                 position: savedPositions[s.username || s.id] || s.position || ''
               };
             }));
+          } else {
+            staffSheetEmptyRef.current = true; // Staff sheet ว่าง → ให้ profiles fallback sync
           }
           setDataLoaded(true);
         }
@@ -3867,8 +3873,9 @@ const AppContent = () => {
             });
             setStaffData(mappedStaff);
 
-            // ถ้า owner login และ Staff sheet ว่าง ให้ sync ข้อมูลพนักงาน+ค่าแรงขึ้น Google Sheets
-            if (user?.role === 'owner' && googleSheets.scriptUrl) {
+            // sync ขึ้น Google Sheets เฉพาะเมื่อ owner login และ Staff sheet ว่างจริง (ครั้งเดียวเท่านั้น)
+            if (user?.role === 'owner' && googleSheets.scriptUrl && staffSheetEmptyRef.current) {
+              staffSheetEmptyRef.current = false; // reset ทันทีเพื่อป้องกัน sync ซ้ำ
               mappedStaff.forEach(s => {
                 googleSheets.saveStaff({
                   id: s.id,
