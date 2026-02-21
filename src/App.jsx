@@ -1464,7 +1464,7 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s.username || s.id} value={s.username}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -1575,7 +1575,7 @@ const BonusModal = ({ isOpen, onClose, onSave, staffList, editingBonus }) => {
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s.username || s.id} value={s.username}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -1694,7 +1694,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
-                <option key={s.id} value={s.id}>{s.name}</option>
+                <option key={s.username || s.id} value={s.username}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -3878,7 +3878,7 @@ const AppContent = () => {
               staffSheetEmptyRef.current = false; // reset ทันทีเพื่อป้องกัน sync ซ้ำ
               mappedStaff.forEach(s => {
                 googleSheets.saveStaff({
-                  id: s.id,
+                  id: s.username,   // ใช้ username เป็น id เพื่อให้ตรงกับ Advances/Attendance sheet
                   username: s.username,
                   name: s.name,
                   role: s.role,
