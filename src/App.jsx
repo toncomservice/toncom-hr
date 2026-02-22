@@ -87,8 +87,10 @@ const useGoogleSheets = (initialData, isReady = false) => {
   const [lastSync, setLastSync] = useState(null);
   const [error, setError] = useState(null);
   const [pendingActions, setPendingActions] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
   });
 
   // โหลด URL จาก database เมื่อ ready (ถ้ามีค่าใหม่จาก Supabase ให้ใช้แทน)
@@ -1502,7 +1504,7 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
-                <option key={s.username || s.id} value={s.username}>{s.name}</option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -1613,7 +1615,7 @@ const BonusModal = ({ isOpen, onClose, onSave, staffList, editingBonus }) => {
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
-                <option key={s.username || s.id} value={s.username}>{s.name}</option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -1732,7 +1734,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
-                <option key={s.username || s.id} value={s.username}>{s.name}</option>
+                <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </select>
           </div>
@@ -1908,8 +1910,8 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         if (useAttendance) {
           monthsInRange.forEach(month => {
             const att = attendance?.[staff.username]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0 };
-            workDays += att.workDays;
-            wageCost += (dailyWage * att.workDays) - (att.lateDays * 50) - (att.absentDays * 300);
+            workDays += att.workDays || 0;
+            wageCost += (dailyWage * (att.workDays || 0)) - ((att.lateDays || 0) * 50) - ((att.absentDays || 0) * 300);
           });
         } else {
           workDays = daysInRange || 1;
@@ -3062,44 +3064,46 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
 
   const username = user.profile?.username || user.username || user.email?.split('@')[0];
-  const staffInfo = staffData.find(s => s.username === username || s.id === user.id) || {
-    id: user.id,
-    username,
-    name: user.profile?.name || user.name || username,
-    role: 'staff',
-    dailyWage: (() => {
-      const saved = localStorage.getItem('money_tracker_wage_history');
-      if (!saved) return 0;
-      const history = JSON.parse(saved)[username];
-      if (!history?.length) return 0;
+  const staffInfo = staffData.find(s => s.username === username || s.id === user.id) || (() => {
+    try {
+      const rawWH = localStorage.getItem('money_tracker_wage_history');
+      const wageHistoryMap = rawWH ? JSON.parse(rawWH) : {};
+      const history = wageHistoryMap[username] || [];
       const sorted = [...history].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-      return sorted[sorted.length - 1]?.dailyWage || 0;
-    })(),
-    daily_wage: (() => {
-      const saved = localStorage.getItem('money_tracker_wage_history');
-      if (!saved) return 0;
-      const history = JSON.parse(saved)[username];
-      if (!history?.length) return 0;
-      const sorted = [...history].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-      return sorted[sorted.length - 1]?.dailyWage || 0;
-    })(),
-    wageHistory: (() => {
-      const saved = localStorage.getItem('money_tracker_wage_history');
-      if (!saved) return [];
-      return JSON.parse(saved)[username] || [];
-    })(),
-    startDate: (() => {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-      const sd = saved[username] || user.profile?.start_date || user.start_date || null;
-      return sd ? sd.split('T')[0] : null;
-    })(),
-    start_date: (() => {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-      const sd = saved[username] || user.profile?.start_date || user.start_date || null;
-      return sd ? sd.split('T')[0] : null;
-    })(),
-    position: user.profile?.position || user.position || ''
-  };
+      const latestWage = sorted[sorted.length - 1]?.dailyWage || 0;
+
+      const rawSD = localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES);
+      const sdMap = rawSD ? JSON.parse(rawSD) : {};
+      const sd = sdMap[username] || user.profile?.start_date || user.start_date || null;
+      const startDate = sd ? sd.split('T')[0] : null;
+
+      return {
+        id: user.id,
+        username,
+        name: user.profile?.name || user.name || username,
+        role: 'staff',
+        dailyWage: latestWage,
+        daily_wage: latestWage,
+        wageHistory: history,
+        startDate,
+        start_date: startDate,
+        position: user.profile?.position || user.position || ''
+      };
+    } catch {
+      return {
+        id: user.id,
+        username,
+        name: user.profile?.name || user.name || username,
+        role: 'staff',
+        dailyWage: 0,
+        daily_wage: 0,
+        wageHistory: [],
+        startDate: null,
+        start_date: null,
+        position: ''
+      };
+    }
+  })();
 
   // รายการเดือนที่มีข้อมูล
   const availableMonths = useMemo(() => {
@@ -3844,8 +3848,10 @@ const AppContent = () => {
   const [staffData, setStaffData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [staffPositions, setStaffPositions] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS);
-    return saved ? JSON.parse(saved) : {};
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS);
+      return saved ? JSON.parse(saved) : {};
+    } catch { return {}; }
   });
 
   // UI State
