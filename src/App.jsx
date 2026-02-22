@@ -46,7 +46,10 @@ class ErrorBoundary extends React.Component {
           <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
             <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-gray-800 mb-2">เกิดข้อผิดพลาด</h2>
-            <p className="text-gray-600 mb-4">กรุณารีเฟรชหน้าเว็บหรือติดต่อผู้ดูแลระบบ</p>
+            <p className="text-gray-600 mb-2">กรุณารีเฟรชหน้าเว็บหรือติดต่อผู้ดูแลระบบ</p>
+            {this.state.error && (
+              <p className="text-xs text-gray-400 mb-4 font-mono break-all">{this.state.error.message}</p>
+            )}
             <button
               onClick={() => window.location.reload()}
               className="bg-indigo-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-indigo-700 transition"
@@ -589,10 +592,12 @@ const AutocompleteInput = ({ value, onChange, suggestions, placeholder, icon: Ic
   const inputRef = useRef(null);
 
   useEffect(() => {
-    if (value && suggestions.length > 0) {
-      const filtered = suggestions.filter(s =>
-        s.toLowerCase().includes(value.toLowerCase())
-      ).slice(0, 5);
+    const safeValue = typeof value === 'string' ? value : '';
+    const safeSuggestions = Array.isArray(suggestions) ? suggestions : [];
+    if (safeValue && safeSuggestions.length > 0) {
+      const filtered = safeSuggestions
+        .filter(s => typeof s === 'string' && s.toLowerCase().includes(safeValue.toLowerCase()))
+        .slice(0, 5);
       setFilteredSuggestions(filtered);
     } else {
       setFilteredSuggestions([]);
@@ -740,7 +745,7 @@ const TransactionModal = ({
         try {
           const result = await analyzeReceiptWithGemini(base64, geminiApiKey);
           if (result.amount) setAmount(result.amount.toString());
-          if (result.items) setDescription(result.items);
+          if (result.items) setDescription(Array.isArray(result.items) ? result.items.join(', ') : String(result.items));
           if (result.date) setDate(result.date);
         } catch (err) {
           setScanError(err.message);
@@ -1871,7 +1876,9 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       const months = new Set();
       if (attendance) {
         Object.values(attendance).forEach(staffAtt => {
-          Object.keys(staffAtt).forEach(m => months.add(m));
+          if (staffAtt && typeof staffAtt === 'object') {
+            Object.keys(staffAtt).forEach(m => months.add(m));
+          }
         });
       }
       return [...months];
@@ -4322,7 +4329,9 @@ const AppContent = () => {
 
   // Autocomplete suggestions
   const descriptionSuggestions = useMemo(() => {
-    const descriptions = transactions.map(t => t.description).filter(Boolean);
+    const descriptions = transactions
+      .map(t => t.description)
+      .filter(d => typeof d === 'string' && d.trim().length > 0);
     return [...new Set(descriptions)];
   }, [transactions]);
 
