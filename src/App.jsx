@@ -1898,8 +1898,12 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
   const stats = useMemo(() => {
     const filtered = transactions.filter(t => inRange(t.date));
-    const totalIncome = filtered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-    const totalExpense = filtered.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+    const incomeItems = filtered.filter(t => t.type === 'income');
+    const expenseItems = filtered.filter(t => t.type === 'expense');
+    const totalIncome = incomeItems.reduce((sum, t) => sum + t.amount, 0);
+    const totalExpense = expenseItems.reduce((sum, t) => sum + t.amount, 0);
+    const incomeCount = incomeItems.length;
+    const expenseCount = expenseItems.length;
 
     // จำนวนวันในช่วงที่เลือก (สำหรับ custom/week)
     const daysInRange = dateRange.from
@@ -1962,7 +1966,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
 
-    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance };
+    return { totalIncome, totalExpense, incomeCount, expenseCount, profit, totalStaffCost, totalAdvances, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance };
   }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -2062,8 +2066,8 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
-        <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
-        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
+        <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} subtitle={`ผลรวมรายรับทุกหมวด • ${stats.incomeCount} รายการ`} icon={TrendingUp} color="emerald" />
+        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ผลรวมรายจ่ายทุกหมวด • ${stats.expenseCount} รายการ`} icon={TrendingDown} color="red" />
         <StatsCard
           title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
