@@ -1906,7 +1906,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       ? Math.max(1, Math.floor((new Date(dateRange.to) - new Date(dateRange.from)) / 86400000) + 1)
       : null;
 
-    // ค่าแรงเตรียมจ่ายแต่ละคน พร้อม breakdown
+    // ค่าแรงเตรียมจ่ายแต่ละคน พร้อม breakdown (ตามช่วงวันที่ที่เลือก)
     const useAttendance = viewMode === 'month' || viewMode === 'all';
     const staffWageBreakdown = (staffData || [])
       .filter(s => s.active !== false && s.role !== 'owner')
@@ -1929,7 +1929,26 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
     const totalStaffCost = staffWageBreakdown.reduce((sum, s) => sum + s.wageCost, 0);
 
-    // เงินเบิกพนักงาน
+    // ค่าแรงสะสมจริงถึงวันนี้ (ทุกคน) — ใช้ attendance ถ้ามี ไม่งั้นคำนวณจากวันเริ่มงาน
+    const today = new Date().toISOString().split('T')[0];
+    const staffWagesAccumulated = (staffData || [])
+      .filter(s => s.active !== false && s.role !== 'owner')
+      .map(staff => {
+        const wageHistory = staff.wageHistory && staff.wageHistory.length > 0
+          ? staff.wageHistory
+          : [{ dailyWage: staff.daily_wage || staff.dailyWage || 0, effectiveDate: staff.startDate || staff.start_date || today }];
+        const staffAttendance = attendance?.[staff.username] || {};
+        const earned = calculateEarningsFromAttendance(wageHistory, staffAttendance)
+          ?? calculateEarningsWithHistory(wageHistory, staff.startDate || staff.start_date, today);
+        const staffAdvances = advances.filter(a => a.staffId === staff.username).reduce((s, a) => s + a.amount, 0);
+        return { name: staff.name, earned: earned || 0, advances: staffAdvances, owed: Math.max(0, (earned || 0) - staffAdvances) };
+      });
+
+    const totalStaffWagesEarned = staffWagesAccumulated.reduce((sum, s) => sum + s.earned, 0);
+    const totalAdvancesAllTime = advances.reduce((sum, a) => sum + a.amount, 0);
+    const wageOwed = totalStaffWagesEarned - totalAdvancesAllTime;
+
+    // เงินเบิกพนักงาน (ตามช่วงวันที่ที่เลือก)
     const totalAdvances = advances
       .filter(a => {
         const advDate = a.date || (a.month ? `${a.month}-01` : null);
@@ -1939,12 +1958,11 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
     const profit = totalIncome - totalExpense;
     const netProfit = profit - totalStaffCost - totalAdvances;
-    // ค่าแรงคงเหลือที่ยังต้องจ่าย = ค่าแรงทั้งหมด - เบิกไปแล้ว (ถ้าติดลบ = จ่ายเกินแล้ว ไม่ต้องจ่ายเพิ่ม)
-    const wageOwed = totalStaffCost - totalAdvances;
+    // กำไรสุทธิ ณ ปัจจุบัน = รายรับ - รายจ่าย - ค่าแรงคงเหลือที่ยังต้องจ่าย (ทั้งหมด)
     const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
 
-    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, wageOwed, realNetProfit, activeProjects, staffWageBreakdown, daysInRange, useAttendance };
+    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance };
   }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -2047,9 +2065,9 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
         <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
         <StatsCard
-          title={stats.useAttendance ? 'ค่าแรงคงเหลือ' : 'ค่าแรงคงเหลือ (ประมาณ)'}
+          title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
-          subtitle={`แรง ${formatCurrency(stats.totalStaffCost)} - เบิกแล้ว ${formatCurrency(stats.totalAdvances)}`}
+          subtitle={`แรง ${formatCurrency(stats.totalStaffWagesEarned)} - เบิก ${formatCurrency(stats.totalAdvancesAllTime)}`}
           icon={Users}
           color="purple"
         />
@@ -2074,12 +2092,12 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
             <span className="text-red-600">-{formatCurrency(stats.totalExpense)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>{stats.useAttendance ? 'ค่าแรงพนักงาน' : `ค่าแรงเตรียมจ่าย${stats.daysInRange ? ` (${stats.daysInRange} วัน)` : ''}`}</span>
-            <span className="text-purple-500">{formatCurrency(stats.totalStaffCost)}</span>
+            <span>ค่าแรงสะสมถึงวันนี้ (ทุกคน)</span>
+            <span className="text-purple-500">{formatCurrency(stats.totalStaffWagesEarned)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>หักเบิกไปแล้ว</span>
-            <span className="text-purple-400">-{formatCurrency(stats.totalAdvances)}</span>
+            <span>หักเบิกไปแล้ว (ทั้งหมด)</span>
+            <span className="text-purple-400">-{formatCurrency(stats.totalAdvancesAllTime)}</span>
           </div>
           <div className="flex justify-between text-sm font-medium text-gray-700 bg-purple-50 rounded-lg px-2 py-1">
             <span>ค่าแรงคงเหลือที่ต้องจ่าย</span>
@@ -2095,29 +2113,26 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         </div>
       </div>
 
-      {/* ค่าแรงเตรียมจ่าย Breakdown */}
-      {stats.staffWageBreakdown?.length > 0 && (
+      {/* ค่าแรงสะสมถึงวันนี้ Breakdown */}
+      {stats.staffWagesAccumulated?.length > 0 && (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
             <Users className="w-5 h-5 text-purple-500" />
-            {stats.useAttendance ? 'ค่าแรงพนักงาน (ตามวันทำงานจริง)' : `ค่าแรงเตรียมจ่าย${stats.daysInRange ? ` (${stats.daysInRange} วัน)` : ''}`}
+            ค่าแรงพนักงานสะสมถึงวันนี้
           </h3>
           <div className="space-y-2">
-            {stats.staffWageBreakdown.map((s, i) => (
+            {stats.staffWagesAccumulated.map((s, i) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                 <div>
                   <p className="text-sm font-medium text-gray-700">{s.name}</p>
-                  <p className="text-xs text-gray-400">
-                    {s.workDays} วัน × {formatCurrency(s.dailyWage)}/วัน
-                    {!stats.useAttendance && <span className="text-gray-300 ml-1">(ประมาณการ)</span>}
-                  </p>
+                  <p className="text-xs text-gray-400">เบิกแล้ว {formatCurrency(s.advances)} · คงเหลือ {formatCurrency(s.owed)}</p>
                 </div>
-                <span className="font-semibold text-purple-600">{formatCurrency(s.wageCost)}</span>
+                <span className="font-semibold text-purple-600">{formatCurrency(s.earned)}</span>
               </div>
             ))}
             <div className="flex justify-between items-center pt-1 border-t border-purple-100">
-              <span className="text-sm font-medium text-gray-600">รวมค่าแรง</span>
-              <span className="font-bold text-purple-700">{formatCurrency(stats.totalStaffCost)}</span>
+              <span className="text-sm font-medium text-gray-600">รวมค่าแรงสะสม</span>
+              <span className="font-bold text-purple-700">{formatCurrency(stats.totalStaffWagesEarned)}</span>
             </div>
           </div>
         </div>
