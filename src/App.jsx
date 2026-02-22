@@ -2080,38 +2080,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         />
       </div>
 
-      {/* Net Profit Card — รายละเอียด */}
-      <div className={`rounded-xl p-4 shadow-sm border ${stats.realNetProfit >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>รายรับ</span>
-            <span className="text-emerald-600 font-medium">+{formatCurrency(stats.totalIncome)}</span>
-          </div>
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>รายจ่าย (ค่าดำเนินงาน)</span>
-            <span className="text-red-600">-{formatCurrency(stats.totalExpense)}</span>
-          </div>
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>ค่าแรงสะสมถึงวันนี้ (ทุกคน)</span>
-            <span className="text-purple-500">{formatCurrency(stats.totalStaffWagesEarned)}</span>
-          </div>
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>หักเบิกไปแล้ว (ทั้งหมด)</span>
-            <span className="text-purple-400">-{formatCurrency(stats.totalAdvancesAllTime)}</span>
-          </div>
-          <div className="flex justify-between text-sm font-medium text-gray-700 bg-purple-50 rounded-lg px-2 py-1">
-            <span>ค่าแรงคงเหลือที่ต้องจ่าย</span>
-            <span className="text-purple-700">-{formatCurrency(Math.max(0, stats.wageOwed))}</span>
-          </div>
-          <div className="border-t border-gray-200 pt-2 flex justify-between items-center">
-            <span className="font-medium text-gray-700">กำไรสุทธิ ณ ปัจจุบัน</span>
-            <span className={`text-2xl font-bold ${stats.realNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {formatCurrency(stats.realNetProfit)}
-            </span>
-          </div>
-          <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
-        </div>
-      </div>
+      <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
 
       {/* ค่าแรงสะสมถึงวันนี้ Breakdown */}
       {stats.staffWagesAccumulated?.length > 0 && (
@@ -2122,17 +2091,30 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           </h3>
           <div className="space-y-2">
             {stats.staffWagesAccumulated.map((s, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
-                <div>
+              <div key={i} className="py-2 border-b border-gray-100 last:border-0">
+                <div className="flex items-center justify-between mb-1">
                   <p className="text-sm font-medium text-gray-700">{s.name}</p>
-                  <p className="text-xs text-gray-400">เบิกแล้ว {formatCurrency(s.advances)} · คงเหลือ {formatCurrency(s.owed)}</p>
+                  <span className="text-sm font-semibold text-purple-600">{formatCurrency(s.earned)}</span>
                 </div>
-                <span className="font-semibold text-purple-600">{formatCurrency(s.earned)}</span>
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span>เบิกไปแล้ว</span>
+                  <span className="text-orange-500">-{formatCurrency(s.advances)}</span>
+                </div>
+                <div className="flex justify-between text-xs font-medium mt-0.5">
+                  <span className="text-gray-600">คงเหลือที่ต้องจ่าย</span>
+                  <span className={s.owed > 0 ? 'text-red-500' : 'text-emerald-500'}>{formatCurrency(s.owed)}</span>
+                </div>
               </div>
             ))}
-            <div className="flex justify-between items-center pt-1 border-t border-purple-100">
-              <span className="text-sm font-medium text-gray-600">รวมค่าแรงสะสม</span>
-              <span className="font-bold text-purple-700">{formatCurrency(stats.totalStaffWagesEarned)}</span>
+            <div className="pt-2 border-t border-purple-100 space-y-1">
+              <div className="flex justify-between text-sm text-gray-600">
+                <span>รวมค่าแรงสะสม</span>
+                <span className="font-semibold text-purple-700">{formatCurrency(stats.totalStaffWagesEarned)}</span>
+              </div>
+              <div className="flex justify-between text-sm font-bold">
+                <span className="text-gray-700">รวมคงเหลือทั้งหมด</span>
+                <span className={stats.wageOwed > 0 ? 'text-red-600' : 'text-emerald-600'}>{formatCurrency(Math.max(0, stats.wageOwed))}</span>
+              </div>
             </div>
           </div>
         </div>
