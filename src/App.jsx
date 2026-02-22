@@ -6,7 +6,7 @@ import {
   Building2, Users, CreditCard, ArrowUpRight, ArrowDownRight,
   Home, FileText, Settings, DollarSign, Briefcase, X, Check,
   Loader2, Image as ImageIcon, Trash2, Edit3, Save, Filter,
-  Cloud, CloudOff, RefreshCw, Database, Wifi, WifiOff, Mail
+  Cloud, CloudOff, RefreshCw, Database, Wifi, WifiOff, Mail, ChevronDown
 } from 'lucide-react';
 import {
   getSupabase,
@@ -2742,6 +2742,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [editingPositionId, setEditingPositionId] = useState(null);
   const [positionInput, setPositionInput] = useState('');
+  const [expandedAdvancesId, setExpandedAdvancesId] = useState(null);
 
   // คำนวณจำนวนวันทำงาน (รวมทุกวัน)
   const calculateWorkingDays = (startDate, endDate) => {
@@ -2963,10 +2964,16 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                         <span className="text-sm font-semibold text-amber-600">+{formatCurrency(staff.totalAllBonuses)}</span>
                       </div>
                     )}
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-500">หักเบิกแล้ว</span>
+                    <button
+                      className="flex justify-between items-center w-full hover:bg-purple-50 rounded transition px-1 -mx-1"
+                      onClick={() => setExpandedAdvancesId(expandedAdvancesId === staff.username ? null : staff.username)}
+                    >
+                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                        หักเบิกแล้ว
+                        <ChevronDown className={`w-3 h-3 text-purple-400 transition-transform ${expandedAdvancesId === staff.username ? 'rotate-180' : ''}`} />
+                      </span>
                       <span className="text-sm font-semibold text-purple-600">-{formatCurrency(staff.totalAllAdvances)}</span>
-                    </div>
+                    </button>
                     {staff.totalAllDeductions > 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-gray-500">หักสาย/ขาด</span>
@@ -3033,6 +3040,34 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                         <span className="font-semibold text-amber-600">{formatCurrency(b.amount)}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* ประวัติเบิกเงินทั้งหมด (expandable) */}
+                {expandedAdvancesId === staff.username && (
+                  <div className="mt-2 bg-purple-50 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-purple-700">ประวัติเบิกเงินทั้งหมด</p>
+                    {(() => {
+                      const staffAdvances = advances
+                        .filter(a => a.staffId === staff.username)
+                        .sort((a, b) => new Date(b.date) - new Date(a.date));
+                      if (staffAdvances.length === 0) {
+                        return <p className="text-xs text-gray-400 text-center py-2">ยังไม่มีรายการเบิกเงิน</p>;
+                      }
+                      return staffAdvances.map((adv, i) => (
+                        <div key={adv.id || i} className="flex justify-between items-start text-xs border-b border-purple-100 pb-1 last:border-0 last:pb-0">
+                          <div>
+                            <p className="font-medium text-gray-700">{adv.description || 'เบิกเงิน'}</p>
+                            <p className="text-gray-400">{formatDate(adv.date)} · เดือน {adv.month || '-'}</p>
+                          </div>
+                          <span className="font-semibold text-purple-600 shrink-0 ml-2">{formatCurrency(adv.amount)}</span>
+                        </div>
+                      ));
+                    })()}
+                    <div className="border-t border-purple-200 pt-1 flex justify-between text-xs font-semibold">
+                      <span className="text-purple-700">รวมทั้งหมด</span>
+                      <span className="text-purple-700">{formatCurrency(staff.totalAllAdvances)}</span>
+                    </div>
                   </div>
                 )}
               </>
