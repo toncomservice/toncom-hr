@@ -2229,13 +2229,66 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
 // Owner Transactions List
 const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, filterProject, setFilterProject }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const [viewMode, setViewMode] = useState('all');
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
+  const [selectedWeek, setSelectedWeek] = useState(() => {
+    const d = new Date();
+    const day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [dateFrom, setDateFrom] = useState(today);
+  const [dateTo, setDateTo] = useState(today);
+
+  const dateRange = useMemo(() => {
+    if (viewMode === 'custom') return { from: dateFrom, to: dateTo };
+    if (viewMode === 'week') {
+      const start = new Date(selectedWeek);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 6);
+      return { from: start.toISOString().split('T')[0], to: end.toISOString().split('T')[0] };
+    }
+    if (viewMode === 'month') {
+      const [y, m] = selectedMonth.split('-').map(Number);
+      const lastDay = new Date(y, m, 0).getDate();
+      return { from: `${selectedMonth}-01`, to: `${selectedMonth}-${String(lastDay).padStart(2, '0')}` };
+    }
+    return { from: null, to: null };
+  }, [viewMode, dateFrom, dateTo, selectedMonth, selectedWeek]);
+
+  const shiftWeek = (dir) => {
+    const d = new Date(selectedWeek);
+    d.setDate(d.getDate() + dir * 7);
+    setSelectedWeek(d.toISOString().split('T')[0]);
+  };
+  const shiftMonth = (dir) => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const nd = new Date(y, m - 1 + dir, 1);
+    setSelectedMonth(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const availableMonths = useMemo(() => {
+    const months = new Set();
+    months.add(getCurrentMonth());
+    transactions.forEach(t => { if (t.date) months.add(t.date.substring(0, 7)); });
+    return [...months].sort().reverse();
+  }, [transactions]);
+
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
-    if (filterProject) {
-      filtered = filtered.filter(t => t.projectId === filterProject);
+    if (filterProject) filtered = filtered.filter(t => t.projectId === filterProject);
+    if (dateRange.from) {
+      filtered = filtered.filter(t => t.date >= dateRange.from && t.date <= dateRange.to);
     }
     return filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [transactions, filterProject]);
+  }, [transactions, filterProject, dateRange]);
+
+  const summary = useMemo(() => {
+    const income = filteredTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+    return { income, expense, profit: income - expense };
+  }, [filteredTransactions]);
 
   const getProjectName = (projectId) => {
     const project = projects.find(p => p.id === projectId);
@@ -2255,7 +2308,82 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
         </button>
       </div>
 
-      {/* Filter */}
+      {/* Date Filter Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
+        {[
+          { id: 'custom', label: 'กำหนดเอง' },
+          { id: 'week', label: 'รายสัปดาห์' },
+          { id: 'month', label: 'รายเดือน' },
+          { id: 'all', label: 'ทั้งหมด' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setViewMode(tab.id)}
+            className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${viewMode === tab.id ? 'bg-indigo-600 text-white shadow' : 'text-gray-500 hover:text-gray-700'}`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {viewMode === 'custom' && (
+        <div className="flex items-center gap-2">
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm" />
+          <span className="text-gray-400 text-sm">ถึง</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-xl text-sm" />
+        </div>
+      )}
+
+      {viewMode === 'week' && (
+        <div className="flex items-center justify-between bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+          <button onClick={() => shiftWeek(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+            <ChevronRight className="w-5 h-5 text-gray-500 rotate-180" />
+          </button>
+          <span className="text-sm font-medium text-gray-700">
+            {(() => { const e = new Date(selectedWeek); e.setDate(e.getDate() + 6); return `${formatDate(selectedWeek)} - ${formatDate(e.toISOString().split('T')[0])}`; })()}
+          </span>
+          <button onClick={() => shiftWeek(1)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+            <ChevronRight className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+      )}
+
+      {viewMode === 'month' && (
+        <div className="flex items-center justify-between bg-white rounded-xl p-3 shadow-sm border border-gray-100">
+          <button onClick={() => shiftMonth(-1)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+            <ChevronRight className="w-5 h-5 text-gray-500 rotate-180" />
+          </button>
+          <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}
+            className="text-sm font-medium text-gray-700 border-0 bg-transparent focus:ring-0 text-center cursor-pointer">
+            {availableMonths.map(m => (
+              <option key={m} value={m}>{m === getCurrentMonth() ? `${m} (เดือนนี้)` : m}</option>
+            ))}
+          </select>
+          <button onClick={() => shiftMonth(1)} className="p-2 hover:bg-gray-100 rounded-lg transition">
+            <ChevronRight className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+      )}
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="bg-emerald-50 rounded-xl p-2">
+          <p className="text-xs text-gray-500">รายรับ</p>
+          <p className="text-sm font-bold text-emerald-600">{formatCurrency(summary.income)}</p>
+        </div>
+        <div className="bg-red-50 rounded-xl p-2">
+          <p className="text-xs text-gray-500">รายจ่าย</p>
+          <p className="text-sm font-bold text-red-600">{formatCurrency(summary.expense)}</p>
+        </div>
+        <div className={`rounded-xl p-2 ${summary.profit >= 0 ? 'bg-indigo-50' : 'bg-red-50'}`}>
+          <p className="text-xs text-gray-500">กำไร</p>
+          <p className={`text-sm font-bold ${summary.profit >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>{formatCurrency(summary.profit)}</p>
+        </div>
+      </div>
+
+      {/* Project Filter */}
       <select
         value={filterProject}
         onChange={(e) => setFilterProject(e.target.value)}
