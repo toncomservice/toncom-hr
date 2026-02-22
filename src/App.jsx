@@ -2042,30 +2042,43 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
-        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
+        <StatsCard title="รายจ่าย (ดำเนินงาน)" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
         <StatsCard
-          title={stats.useAttendance ? 'ค่าแรงพนักงาน' : 'ค่าแรงเตรียมจ่าย'}
-          value={formatCurrency(stats.totalStaffCost)}
+          title={stats.useAttendance ? 'ค่าพนักงาน (แรง+เบิก)' : 'ค่าพนักงาน (ประมาณ)'}
+          value={formatCurrency(stats.totalStaffCost + stats.totalAdvances)}
+          subtitle={stats.totalStaffCost > 0 || stats.totalAdvances > 0
+            ? `แรง ${formatCurrency(stats.totalStaffCost)} · เบิก ${formatCurrency(stats.totalAdvances)}`
+            : undefined}
           icon={Users}
           color="purple"
         />
-        <StatsCard title="เบิกเงิน" value={formatCurrency(stats.totalAdvances)} icon={CreditCard} color="orange" />
+        <StatsCard
+          title="กำไรสุทธิ"
+          value={formatCurrency(stats.netProfit)}
+          subtitle="รายรับ - รายจ่าย - ค่าพนักงาน"
+          icon={stats.netProfit >= 0 ? TrendingUp : TrendingDown}
+          color={stats.netProfit >= 0 ? 'emerald' : 'red'}
+        />
       </div>
 
-      {/* Net Profit Card */}
+      {/* Net Profit Card — รายละเอียด */}
       <div className={`rounded-xl p-4 shadow-sm border ${stats.netProfit >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-gray-600">
-            <span>รายรับ - รายจ่าย</span>
-            <span className={stats.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}>{formatCurrency(stats.profit)}</span>
+            <span>รายรับ</span>
+            <span className="text-emerald-600 font-medium">+{formatCurrency(stats.totalIncome)}</span>
+          </div>
+          <div className="flex justify-between text-sm text-gray-600">
+            <span>รายจ่าย (ค่าดำเนินงาน)</span>
+            <span className="text-red-600">-{formatCurrency(stats.totalExpense)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
             <span>{stats.useAttendance ? 'ค่าแรงพนักงาน' : `ค่าแรงเตรียมจ่าย${stats.daysInRange ? ` (${stats.daysInRange} วัน)` : ''}`}</span>
             <span className="text-purple-600">-{formatCurrency(stats.totalStaffCost)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>เบิกเงิน</span>
-            <span className="text-orange-600">-{formatCurrency(stats.totalAdvances)}</span>
+            <span>เบิกเงินพนักงาน</span>
+            <span className="text-purple-600">-{formatCurrency(stats.totalAdvances)}</span>
           </div>
           <div className="border-t border-gray-200 pt-2 flex justify-between items-center">
             <span className="font-medium text-gray-700">กำไรสุทธิ</span>
