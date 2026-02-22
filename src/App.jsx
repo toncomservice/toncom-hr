@@ -2042,7 +2042,6 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
-        <StatsCard title="รายจ่าย (ดำเนินงาน)" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
         <StatsCard
           title={stats.useAttendance ? 'ค่าพนักงาน (แรง+เบิก)' : 'ค่าพนักงาน (ประมาณ)'}
           value={formatCurrency(stats.totalStaffCost + stats.totalAdvances)}
@@ -2052,13 +2051,15 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           icon={Users}
           color="purple"
         />
-        <StatsCard
-          title="กำไรสุทธิ"
-          value={formatCurrency(stats.netProfit)}
-          subtitle="รายรับ - รายจ่าย - ค่าพนักงาน"
-          icon={stats.netProfit >= 0 ? TrendingUp : TrendingDown}
-          color={stats.netProfit >= 0 ? 'emerald' : 'red'}
-        />
+        <div className="col-span-2">
+          <StatsCard
+            title="กำไรสุทธิ"
+            value={formatCurrency(stats.netProfit)}
+            subtitle={`รายรับ ${formatCurrency(stats.totalIncome)} - รายจ่าย ${formatCurrency(stats.totalExpense)} - ค่าพนักงาน ${formatCurrency(stats.totalStaffCost + stats.totalAdvances)}`}
+            icon={stats.netProfit >= 0 ? TrendingUp : TrendingDown}
+            color={stats.netProfit >= 0 ? 'emerald' : 'red'}
+          />
+        </div>
       </div>
 
       {/* Net Profit Card — รายละเอียด */}
