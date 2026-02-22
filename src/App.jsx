@@ -1939,9 +1939,12 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
     const profit = totalIncome - totalExpense;
     const netProfit = profit - totalStaffCost - totalAdvances;
+    // ค่าแรงคงเหลือที่ยังต้องจ่าย = ค่าแรงทั้งหมด - เบิกไปแล้ว (ถ้าติดลบ = จ่ายเกินแล้ว ไม่ต้องจ่ายเพิ่ม)
+    const wageOwed = totalStaffCost - totalAdvances;
+    const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
 
-    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, activeProjects, staffWageBreakdown, daysInRange, useAttendance };
+    return { totalIncome, totalExpense, profit, totalStaffCost, totalAdvances, netProfit, wageOwed, realNetProfit, activeProjects, staffWageBreakdown, daysInRange, useAttendance };
   }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -2042,28 +2045,25 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} icon={TrendingUp} color="emerald" />
+        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} icon={TrendingDown} color="red" />
         <StatsCard
-          title={stats.useAttendance ? 'ค่าพนักงาน (แรง+เบิก)' : 'ค่าพนักงาน (ประมาณ)'}
-          value={formatCurrency(stats.totalStaffCost + stats.totalAdvances)}
-          subtitle={stats.totalStaffCost > 0 || stats.totalAdvances > 0
-            ? `แรง ${formatCurrency(stats.totalStaffCost)} · เบิก ${formatCurrency(stats.totalAdvances)}`
-            : undefined}
+          title={stats.useAttendance ? 'ค่าแรงคงเหลือ' : 'ค่าแรงคงเหลือ (ประมาณ)'}
+          value={formatCurrency(Math.max(0, stats.wageOwed))}
+          subtitle={`แรง ${formatCurrency(stats.totalStaffCost)} - เบิกแล้ว ${formatCurrency(stats.totalAdvances)}`}
           icon={Users}
           color="purple"
         />
-        <div className="col-span-2">
-          <StatsCard
-            title="กำไรสุทธิ"
-            value={formatCurrency(stats.netProfit)}
-            subtitle={`รายรับ ${formatCurrency(stats.totalIncome)} - รายจ่าย ${formatCurrency(stats.totalExpense)} - ค่าพนักงาน ${formatCurrency(stats.totalStaffCost + stats.totalAdvances)}`}
-            icon={stats.netProfit >= 0 ? TrendingUp : TrendingDown}
-            color={stats.netProfit >= 0 ? 'emerald' : 'red'}
-          />
-        </div>
+        <StatsCard
+          title="กำไรสุทธิ ณ ปัจจุบัน"
+          value={formatCurrency(stats.realNetProfit)}
+          subtitle="รายรับ - รายจ่าย - ค่าแรงคงเหลือ"
+          icon={stats.realNetProfit >= 0 ? TrendingUp : TrendingDown}
+          color={stats.realNetProfit >= 0 ? 'emerald' : 'red'}
+        />
       </div>
 
       {/* Net Profit Card — รายละเอียด */}
-      <div className={`rounded-xl p-4 shadow-sm border ${stats.netProfit >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+      <div className={`rounded-xl p-4 shadow-sm border ${stats.realNetProfit >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200'}`}>
         <div className="space-y-2">
           <div className="flex justify-between text-sm text-gray-600">
             <span>รายรับ</span>
@@ -2075,16 +2075,20 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           </div>
           <div className="flex justify-between text-sm text-gray-600">
             <span>{stats.useAttendance ? 'ค่าแรงพนักงาน' : `ค่าแรงเตรียมจ่าย${stats.daysInRange ? ` (${stats.daysInRange} วัน)` : ''}`}</span>
-            <span className="text-purple-600">-{formatCurrency(stats.totalStaffCost)}</span>
+            <span className="text-purple-500">{formatCurrency(stats.totalStaffCost)}</span>
           </div>
           <div className="flex justify-between text-sm text-gray-600">
-            <span>เบิกเงินพนักงาน</span>
-            <span className="text-purple-600">-{formatCurrency(stats.totalAdvances)}</span>
+            <span>หักเบิกไปแล้ว</span>
+            <span className="text-purple-400">-{formatCurrency(stats.totalAdvances)}</span>
+          </div>
+          <div className="flex justify-between text-sm font-medium text-gray-700 bg-purple-50 rounded-lg px-2 py-1">
+            <span>ค่าแรงคงเหลือที่ต้องจ่าย</span>
+            <span className="text-purple-700">-{formatCurrency(Math.max(0, stats.wageOwed))}</span>
           </div>
           <div className="border-t border-gray-200 pt-2 flex justify-between items-center">
-            <span className="font-medium text-gray-700">กำไรสุทธิ</span>
-            <span className={`text-2xl font-bold ${stats.netProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-              {formatCurrency(stats.netProfit)}
+            <span className="font-medium text-gray-700">กำไรสุทธิ ณ ปัจจุบัน</span>
+            <span className={`text-2xl font-bold ${stats.realNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              {formatCurrency(stats.realNetProfit)}
             </span>
           </div>
           <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
