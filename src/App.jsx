@@ -1902,16 +1902,16 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const expenseItems = filtered.filter(t => t.type === 'expense');
     const totalIncome = incomeItems.reduce((sum, t) => sum + t.amount, 0);
     const operatingExpense = expenseItems.reduce((sum, t) => sum + t.amount, 0);
+    const totalExpense = operatingExpense; // รายจ่าย = ค่าใช้จ่ายจากการดำเนินงาน (เงินเบิกอยู่ใน ค่าแรงคงเหลือ)
     const incomeCount = incomeItems.length;
+    const expenseCount = expenseItems.length;
 
-    // เงินเบิกพนักงาน (ตามช่วงวันที่ที่เลือก) — รวมในรายจ่าย
+    // เงินเบิกพนักงาน (ตามช่วงวันที่ที่เลือก)
     const advancesInRange = advances.filter(a => {
       const advDate = a.date || (a.month ? `${a.month}-01` : null);
       return inRange(advDate);
     });
     const totalAdvances = advancesInRange.reduce((sum, a) => sum + a.amount, 0);
-    const totalExpense = operatingExpense + totalAdvances; // รายจ่าย = ค่าใช้จ่าย + เงินเบิก
-    const expenseCount = expenseItems.length + advancesInRange.length;
 
     // จำนวนวันในช่วงที่เลือก (สำหรับ custom/week)
     const daysInRange = dateRange.from
@@ -2072,7 +2072,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} subtitle={`ผลรวมรายรับทุกหมวด • ${stats.incomeCount} รายการ`} icon={TrendingUp} color="emerald" />
-        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ค่าใช้จ่าย ${formatCurrency(stats.operatingExpense)} + เบิก ${formatCurrency(stats.totalAdvances)}`} icon={TrendingDown} color="red" />
+        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ค่าใช้จ่ายดำเนินงาน • ${stats.expenseCount} รายการ`} icon={TrendingDown} color="red" />
         <StatsCard
           title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
