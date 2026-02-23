@@ -1901,9 +1901,17 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const incomeItems = filtered.filter(t => t.type === 'income');
     const expenseItems = filtered.filter(t => t.type === 'expense');
     const totalIncome = incomeItems.reduce((sum, t) => sum + t.amount, 0);
-    const totalExpense = expenseItems.reduce((sum, t) => sum + t.amount, 0);
+    const operatingExpense = expenseItems.reduce((sum, t) => sum + t.amount, 0);
     const incomeCount = incomeItems.length;
-    const expenseCount = expenseItems.length;
+
+    // เงินเบิกพนักงาน (ตามช่วงวันที่ที่เลือก) — รวมในรายจ่าย
+    const advancesInRange = advances.filter(a => {
+      const advDate = a.date || (a.month ? `${a.month}-01` : null);
+      return inRange(advDate);
+    });
+    const totalAdvances = advancesInRange.reduce((sum, a) => sum + a.amount, 0);
+    const totalExpense = operatingExpense + totalAdvances; // รายจ่าย = ค่าใช้จ่าย + เงินเบิก
+    const expenseCount = expenseItems.length + advancesInRange.length;
 
     // จำนวนวันในช่วงที่เลือก (สำหรับ custom/week)
     const daysInRange = dateRange.from
@@ -1952,21 +1960,18 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const totalAdvancesAllTime = advances.reduce((sum, a) => sum + a.amount, 0);
     const wageOwed = totalStaffWagesEarned - totalAdvancesAllTime;
 
-    // เงินเบิกพนักงาน (ตามช่วงวันที่ที่เลือก)
-    const totalAdvances = advances
-      .filter(a => {
-        const advDate = a.date || (a.month ? `${a.month}-01` : null);
-        return inRange(advDate);
-      })
-      .reduce((sum, a) => sum + a.amount, 0);
-
     const profit = totalIncome - totalExpense;
     const netProfit = profit - totalStaffCost - totalAdvances;
     // กำไรสุทธิ ณ ปัจจุบัน = รายรับ - รายจ่าย - ค่าแรงคงเหลือที่ยังต้องจ่าย (ทั้งหมด)
     const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
 
-    return { totalIncome, totalExpense, incomeCount, expenseCount, profit, totalStaffCost, totalAdvances, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance };
+    // กองทุนแบ่งจากกำไรสุทธิ (แสดงเฉพาะเมื่อกำไรเป็นบวก)
+    const netBase = Math.max(0, realNetProfit);
+    const entertainmentFund = netBase * 0.01;
+    const emergencyFund = netBase * 0.10;
+
+    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, emergencyFund };
   }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -2067,7 +2072,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} subtitle={`ผลรวมรายรับทุกหมวด • ${stats.incomeCount} รายการ`} icon={TrendingUp} color="emerald" />
-        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ผลรวมรายจ่ายทุกหมวด • ${stats.expenseCount} รายการ`} icon={TrendingDown} color="red" />
+        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ค่าใช้จ่าย ${formatCurrency(stats.operatingExpense)} + เบิก ${formatCurrency(stats.totalAdvances)}`} icon={TrendingDown} color="red" />
         <StatsCard
           title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
@@ -2085,6 +2090,28 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       </div>
 
       <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
+
+      {/* การแบ่งเงินจากกำไรสุทธิ */}
+      {stats.realNetProfit > 0 && (
+        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-sm">
+            <span className="text-base">💰</span>
+            แบ่งเงินจากกำไรสุทธิ {formatCurrency(stats.realNetProfit)}
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+              <p className="text-xs text-amber-600 font-medium mb-1">ค่าสันทนาการ (1%)</p>
+              <p className="text-lg font-bold text-amber-700">{formatCurrency(stats.entertainmentFund)}</p>
+              <p className="text-xs text-amber-500 mt-0.5">1% × กำไรสุทธิ</p>
+            </div>
+            <div className="bg-teal-50 rounded-xl p-3 border border-teal-100">
+              <p className="text-xs text-teal-600 font-medium mb-1">เงินสำรองฉุกเฉิน (10%)</p>
+              <p className="text-lg font-bold text-teal-700">{formatCurrency(stats.emergencyFund)}</p>
+              <p className="text-xs text-teal-500 mt-0.5">10% × กำไรสุทธิ</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ค่าแรงสะสมถึงวันนี้ Breakdown */}
       {stats.staffWagesAccumulated?.length > 0 && (
