@@ -246,3 +246,202 @@ export const onAuthStateChange = (callback) => {
 };
 
 export default getSupabase;
+
+// ==================== TRANSACTIONS ====================
+export const getAllTransactions = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('transactions')
+    .select('*')
+    .order('date', { ascending: false });
+  if (error) { console.error('getAllTransactions error:', error); return []; }
+  return data.map(t => ({
+    id: t.id, type: t.type, amount: parseFloat(t.amount) || 0,
+    category: t.category || '', projectId: t.project_id || '',
+    description: t.description || '', date: t.date,
+    createdBy: t.created_by || '', advanceStaffId: t.advance_staff_id || null,
+  }));
+};
+
+export const upsertTransaction = async (transaction) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('transactions').upsert({
+    id: transaction.id, type: transaction.type,
+    amount: parseFloat(transaction.amount) || 0,
+    category: transaction.category || '',
+    project_id: transaction.projectId || null,
+    description: transaction.description || '',
+    date: transaction.date, created_by: transaction.createdBy || '',
+    advance_staff_id: transaction.advanceStaffId || null,
+  });
+  if (error) throw error;
+};
+
+export const deleteTransactionById = async (id) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('transactions').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// ==================== PROJECTS ====================
+export const getAllProjectsFromDB = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('projects').select('*').order('created_at', { ascending: true });
+  if (error) { console.error('getAllProjects error:', error); return []; }
+  return data.map(p => ({ id: p.id, name: p.name, client: p.client || '', status: p.status }));
+};
+
+export const upsertProject = async (project) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('projects').upsert({
+    id: project.id, name: project.name,
+    client: project.client || '', status: project.status || 'in_progress',
+  });
+  if (error) throw error;
+};
+
+// ==================== ATTENDANCE ====================
+export const getAllAttendanceFromDB = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return {};
+  const { data, error } = await supabase.from('attendance').select('*');
+  if (error) { console.error('getAllAttendance error:', error); return {}; }
+  const nested = {};
+  for (const row of data) {
+    if (!nested[row.staff_id]) nested[row.staff_id] = {};
+    nested[row.staff_id][row.month] = {
+      workDays: row.work_days, lateDays: row.late_days,
+      absentDays: row.absent_days, leaveDays: row.leave_days,
+      bonusAmount: parseFloat(row.bonus_amount) || 0,
+    };
+  }
+  return nested;
+};
+
+export const upsertAttendance = async (data) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('attendance').upsert({
+    staff_id: data.staffId, month: data.month,
+    work_days: data.workDays || 0, late_days: data.lateDays || 0,
+    absent_days: data.absentDays || 0, leave_days: data.leaveDays || 0,
+    bonus_amount: parseFloat(data.bonusAmount) || 0,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'staff_id,month' });
+  if (error) throw error;
+};
+
+// ==================== ADVANCES ====================
+export const getAllAdvancesFromDB = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('advances').select('*').order('date', { ascending: false });
+  if (error) { console.error('getAllAdvances error:', error); return []; }
+  return data.map(a => ({
+    id: a.id, staffId: a.staff_id, amount: parseFloat(a.amount) || 0,
+    date: a.date, month: a.month, description: a.description || '',
+  }));
+};
+
+export const insertAdvance = async (advance) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('advances').insert({
+    id: advance.id, staff_id: advance.staffId,
+    amount: parseFloat(advance.amount) || 0,
+    date: advance.date, month: advance.month,
+    description: advance.description || '',
+  });
+  if (error) throw error;
+};
+
+export const deleteAdvanceById = async (id) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('advances').delete().eq('id', id);
+  if (error) throw error;
+};
+
+// ==================== BONUSES ====================
+export const getAllBonusesFromDB = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('bonuses').select('*').order('date', { ascending: false });
+  if (error) { console.error('getAllBonuses error:', error); return []; }
+  return data.map(b => ({
+    id: b.id, staffId: b.staff_id, amount: parseFloat(b.amount) || 0,
+    date: b.date, month: b.month, description: b.description || '',
+  }));
+};
+
+export const insertBonus = async (bonus) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('bonuses').insert({
+    id: bonus.id, staff_id: bonus.staffId,
+    amount: parseFloat(bonus.amount) || 0,
+    date: bonus.date, month: bonus.month,
+    description: bonus.description || '',
+  });
+  if (error) throw error;
+};
+
+// ==================== WAGE HISTORY ====================
+export const getAllWageHistory = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return {};
+  const { data, error } = await supabase
+    .from('wage_history').select('*').order('effective_date', { ascending: true });
+  if (error) { console.error('getAllWageHistory error:', error); return {}; }
+  const map = {};
+  for (const row of data) {
+    if (!map[row.staff_id]) map[row.staff_id] = [];
+    map[row.staff_id].push({
+      dailyWage: parseFloat(row.daily_wage) || 0,
+      effectiveDate: row.effective_date,
+    });
+  }
+  return map;
+};
+
+export const upsertWageHistoryEntry = async (staffId, dailyWage, effectiveDate) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('wage_history').upsert({
+    staff_id: staffId, daily_wage: parseFloat(dailyWage) || 0, effective_date: effectiveDate,
+  }, { onConflict: 'staff_id,effective_date' });
+  if (error) throw error;
+};
+
+export const deleteWageHistoryEntry = async (staffId, effectiveDate) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('wage_history').delete()
+    .eq('staff_id', staffId).eq('effective_date', effectiveDate);
+  if (error) throw error;
+};
+
+export const updateWageHistoryDate = async (staffId, originalDate, newDate) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('wage_history')
+    .update({ effective_date: newDate })
+    .eq('staff_id', staffId).eq('effective_date', originalDate);
+  if (error) throw error;
+};
+
+// ==================== PROFILE FIELDS ====================
+export const updateProfileFields = async (username, fields) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('profiles').update(fields).eq('username', username);
+  if (error) throw error;
+};

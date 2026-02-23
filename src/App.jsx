@@ -6,22 +6,23 @@ import {
   Building2, Users, CreditCard, ArrowUpRight, ArrowDownRight,
   Home, FileText, Settings, DollarSign, Briefcase, X, Check,
   Loader2, Image as ImageIcon, Trash2, Edit3, Save, Filter,
-  Cloud, CloudOff, RefreshCw, Database, Wifi, WifiOff, Mail, ChevronDown
+  Cloud, RefreshCw, ChevronDown
 } from 'lucide-react';
 import {
-  getSupabase,
-  getSupabaseConfig,
-  saveSupabaseConfig,
-  resetSupabaseInstance,
   getProfile,
   getAllProfiles,
   resetUserPassword,
   verifyPassword,
   getProfileByUsername,
-  getGoogleScriptUrl,
-  saveGoogleScriptUrl,
   getGeminiApiKey,
   saveGeminiApiKey,
+  getAllTransactions, upsertTransaction, deleteTransactionById,
+  getAllProjectsFromDB, upsertProject,
+  getAllAttendanceFromDB, upsertAttendance,
+  getAllAdvancesFromDB, insertAdvance, deleteAdvanceById,
+  getAllBonusesFromDB, insertBonus,
+  getAllWageHistory, upsertWageHistoryEntry, deleteWageHistoryEntry, updateWageHistoryDate,
+  updateProfileFields,
 } from './lib/supabase';
 
 // ================== ERROR BOUNDARY ==================
@@ -65,246 +66,39 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-// ================== GOOGLE SHEETS INTEGRATION ==================
-// Google Script URL คงที่ — ฝังไว้เพื่อให้ทุกเครื่องเข้าถึงได้อัตโนมัติ
-const DEFAULT_GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyJUwOE_Cy9fj-txRNs7o5YKMZeTJvWmdT6bliK0utSapFStRxI5ZY4ObmCY9Rh3nug/exec';
 
-const STORAGE_KEYS = {
-  SCRIPT_URL: 'money_tracker_script_url',
-  GEMINI_KEY: 'money_tracker_gemini_key',
-  OFFLINE_DATA: 'money_tracker_offline_data',
-  PENDING_SYNC: 'money_tracker_pending_sync',
-  WAGE_HISTORY: 'money_tracker_wage_history',
-  STAFF_POSITIONS: 'money_tracker_staff_positions',
-  STAFF_START_DATES: 'money_tracker_staff_start_dates'
-};
-
-// Custom Hook สำหรับเชื่อมต่อ Google Sheets
-const useGoogleSheets = (initialData, isReady = false) => {
-  const [scriptUrl, setScriptUrl] = useState(
-    localStorage.getItem(STORAGE_KEYS.SCRIPT_URL) || DEFAULT_GOOGLE_SCRIPT_URL
-  );
-  const [isConnected, setIsConnected] = useState(false);
+// ================== SUPABASE DATA HOOK ==================
+const useSupabaseData = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSync, setLastSync] = useState(null);
   const [error, setError] = useState(null);
-  const [pendingActions, setPendingActions] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PENDING_SYNC);
-      return saved ? JSON.parse(saved) : [];
-    } catch { return []; }
-  });
-
-  // โหลด URL จาก database เมื่อ ready (ถ้ามีค่าใหม่จาก Supabase ให้ใช้แทน)
-  useEffect(() => {
-    if (!isReady) return;
-    const loadUrl = async () => {
-      try {
-        const url = await getGoogleScriptUrl();
-        if (url) {
-          setScriptUrl(url);
-          localStorage.setItem(STORAGE_KEYS.SCRIPT_URL, url);
-        }
-        // ถ้า Supabase ไม่มี ใช้ค่าที่ตั้งไว้แล้วใน useState (DEFAULT หรือ localStorage)
-      } catch (err) {
-        console.error('Error loading Google Script URL:', err);
-      }
-    };
-    loadUrl();
-  }, [isReady]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.PENDING_SYNC, JSON.stringify(pendingActions));
-  }, [pendingActions]);
-
-  const saveScriptUrl = useCallback(async (url) => {
-    setScriptUrl(url);
-    localStorage.setItem(STORAGE_KEYS.SCRIPT_URL, url); // บันทึก localStorage ทันที
-    setIsConnected(false);
-    setError(null);
-    // บันทึกลง database (สำหรับ cross-device sync)
-    try {
-      await saveGoogleScriptUrl(url);
-    } catch (err) {
-      console.error('Error saving Google Script URL:', err);
-    }
-  }, []);
-
-  const testConnection = useCallback(async () => {
-    if (!scriptUrl) {
-      setError('กรุณาใส่ Google Script URL');
-      return false;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const response = await fetch(`${scriptUrl}?action=ping`);
-      if (!response.ok) throw new Error('Connection failed');
-
-      const data = await response.json();
-      if (data.status === 'ok') {
-        setIsConnected(true);
-        setError(null);
-        return true;
-      }
-      throw new Error('Invalid response');
-    } catch (err) {
-      setIsConnected(false);
-      setError('ไม่สามารถเชื่อมต่อได้ ตรวจสอบ URL และการ Deploy');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  }, [scriptUrl]);
 
   const fetchAllData = useCallback(async () => {
-    if (!scriptUrl) return null;
-
     setIsLoading(true);
     setError(null);
-
     try {
-      const response = await fetch(`${scriptUrl}?action=getAll`);
-      if (!response.ok) throw new Error('Fetch failed');
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-
-      setIsConnected(true);
-      setLastSync(new Date());
-      localStorage.setItem(STORAGE_KEYS.OFFLINE_DATA, JSON.stringify(data));
-
-      return data;
+      const [transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff] =
+        await Promise.all([
+          getAllTransactions(),
+          getAllProjectsFromDB(),
+          getAllAttendanceFromDB(),
+          getAllAdvancesFromDB(),
+          getAllBonusesFromDB(),
+          getAllWageHistory(),
+          getAllProfiles(),
+        ]);
+      return { transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff };
     } catch (err) {
+      console.error('fetchAllData error:', err);
       setError('ไม่สามารถดึงข้อมูลได้');
-      setIsConnected(false);
-
-      const cached = localStorage.getItem(STORAGE_KEYS.OFFLINE_DATA);
-      if (cached) {
-        return JSON.parse(cached);
-      }
       return null;
     } finally {
       setIsLoading(false);
     }
-  }, [scriptUrl]);
+  }, []);
 
-  const sendRequest = useCallback(async (action, data) => {
-    if (!scriptUrl) {
-      setPendingActions(prev => [...prev, { action, data, timestamp: Date.now() }]);
-      return { success: true, offline: true };
-    }
-
-    setIsSyncing(true);
-    try {
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        body: JSON.stringify({ action, data })
-      });
-
-      if (!response.ok) throw new Error('Request failed');
-
-      const result = await response.json();
-      if (result.error) throw new Error(result.error);
-
-      setLastSync(new Date());
-      return result;
-    } catch (err) {
-      setPendingActions(prev => [...prev, { action, data, timestamp: Date.now() }]);
-      return { success: true, offline: true, error: err.message };
-    } finally {
-      setIsSyncing(false);
-    }
-  }, [scriptUrl]);
-
-  const syncPendingActions = useCallback(async () => {
-    if (!scriptUrl || pendingActions.length === 0) return;
-
-    setIsSyncing(true);
-    const failed = [];
-
-    for (const item of pendingActions) {
-      try {
-        const response = await fetch(scriptUrl, {
-          method: 'POST',
-          body: JSON.stringify({ action: item.action, data: item.data })
-        });
-
-        if (!response.ok) throw new Error('Sync failed');
-      } catch {
-        failed.push(item);
-      }
-    }
-
-    setPendingActions(failed);
-    if (failed.length === 0) {
-      setLastSync(new Date());
-    }
-    setIsSyncing(false);
-  }, [scriptUrl, pendingActions]);
-
-  const saveTransaction = useCallback((transaction, isNew = true) => {
-    return sendRequest(isNew ? 'addTransaction' : 'updateTransaction', transaction);
-  }, [sendRequest]);
-
-  const deleteTransaction = useCallback((id) => {
-    return sendRequest('deleteTransaction', { id });
-  }, [sendRequest]);
-
-  const saveProject = useCallback((project, isNew = true) => {
-    return sendRequest(isNew ? 'addProject' : 'updateProject', project);
-  }, [sendRequest]);
-
-  const saveAdvance = useCallback((advance) => {
-    return sendRequest('addAdvance', advance);
-  }, [sendRequest]);
-
-  const saveBonus = useCallback((bonus) => {
-    return sendRequest('addBonus', bonus);
-  }, [sendRequest]);
-
-  const saveAttendance = useCallback((attendance) => {
-    return sendRequest('saveAttendance', attendance);
-  }, [sendRequest]);
-
-  const saveStaff = useCallback((staff, isNew = true) => {
-    return sendRequest(isNew ? 'addStaff' : 'updateStaff', staff);
-  }, [sendRequest]);
-
-  const deleteStaff = useCallback((id) => {
-    return sendRequest('deleteStaff', { id });
-  }, [sendRequest]);
-
-  const bulkImport = useCallback(async (data) => {
-    return sendRequest('bulkImport', data);
-  }, [sendRequest]);
-
-  return {
-    scriptUrl,
-    saveScriptUrl,
-    isConnected,
-    isLoading,
-    isSyncing,
-    lastSync,
-    error,
-    pendingActions,
-    testConnection,
-    fetchAllData,
-    syncPendingActions,
-    saveTransaction,
-    deleteTransaction,
-    saveProject,
-    saveAdvance,
-    saveBonus,
-    saveAttendance,
-    saveStaff,
-    deleteStaff,
-    bulkImport
-  };
+  return { isLoading, error, fetchAllData };
 };
+
 
 // ================== CONSTANTS & INITIAL DATA ==================
 const EXPENSE_CATEGORIES = ['ค่าอุปกรณ์', 'ค่าเดินทาง', 'ค่าแรงช่าง', 'ค่าอาหาร', 'ค่าเบ็ดเตล็ด', 'เบิกเงินพนักงาน', 'อื่นๆ'];
@@ -1189,59 +983,15 @@ const ProjectModal = ({ isOpen, onClose, onSave, editingProject }) => {
 const SettingsModal = ({
   isOpen,
   onClose,
-  scriptUrl,
-  onSaveScriptUrl,
   geminiApiKey,
   onSaveGeminiKey,
-  isConnected,
-  isLoading,
-  isSyncing,
-  lastSync,
-  error,
-  pendingActions,
-  onTestConnection,
-  onSyncPending,
   onFetchData,
-  onBulkImport,
-  currentData,
-  supabaseConfig,
-  onSaveSupabaseConfig
 }) => {
-  const [tempUrl, setTempUrl] = useState(scriptUrl);
   const [tempGeminiKey, setTempGeminiKey] = useState(geminiApiKey);
-  const [showImportConfirm, setShowImportConfirm] = useState(false);
-  const [supabaseUrl, setSupabaseUrl] = useState(supabaseConfig?.url || '');
-  const [supabaseKey, setSupabaseKey] = useState(supabaseConfig?.anonKey || '');
 
   useEffect(() => {
-    setTempUrl(scriptUrl);
     setTempGeminiKey(geminiApiKey);
-    if (supabaseConfig) {
-      setSupabaseUrl(supabaseConfig.url || '');
-      setSupabaseKey(supabaseConfig.anonKey || '');
-    }
-  }, [scriptUrl, geminiApiKey, isOpen, supabaseConfig]);
-
-  const handleSaveUrl = async () => {
-    onSaveScriptUrl(tempUrl);
-    if (tempUrl) {
-      const connected = await onTestConnection();
-      if (connected) {
-        onFetchData();
-      }
-    }
-  };
-
-  const handleImportData = async () => {
-    if (!isConnected) return;
-    await onBulkImport(currentData);
-    setShowImportConfirm(false);
-    onFetchData();
-  };
-
-  const handleSaveSupabase = () => {
-    onSaveSupabaseConfig(supabaseUrl, supabaseKey);
-  };
+  }, [geminiApiKey, isOpen]);
 
   if (!isOpen) return null;
 
@@ -1259,111 +1009,6 @@ const SettingsModal = ({
         </div>
 
         <div className="p-4 space-y-6">
-          {/* Supabase Config */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Database className="w-4 h-4 inline mr-1" />
-              Supabase Config
-            </label>
-            <div className="space-y-2">
-              <input
-                type="url"
-                value={supabaseUrl}
-                onChange={(e) => setSupabaseUrl(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
-                placeholder="Supabase URL"
-              />
-              <input
-                type="password"
-                value={supabaseKey}
-                onChange={(e) => setSupabaseKey(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
-                placeholder="Supabase Anon Key"
-              />
-              <button
-                onClick={handleSaveSupabase}
-                className="w-full py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition flex items-center justify-center gap-2"
-              >
-                <Check className="w-4 h-4" />
-                บันทึก Supabase Config
-              </button>
-            </div>
-          </div>
-
-          {/* Google Sheets Connection Status */}
-          <div className="bg-gray-50 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">สถานะ Google Sheets</span>
-              <div className="flex items-center gap-2">
-                {isLoading || isSyncing ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
-                ) : isConnected ? (
-                  <Cloud className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <CloudOff className="w-4 h-4 text-gray-400" />
-                )}
-                <span className={`text-sm font-medium ${isConnected ? 'text-emerald-600' : 'text-gray-500'}`}>
-                  {isLoading ? 'กำลังเชื่อมต่อ...' : isSyncing ? 'กำลัง Sync...' : isConnected ? 'เชื่อมต่อแล้ว' : 'Offline Mode'}
-                </span>
-              </div>
-            </div>
-
-            {lastSync && (
-              <p className="text-xs text-gray-500">
-                Sync ล่าสุด: {lastSync.toLocaleString('th-TH')}
-              </p>
-            )}
-
-            {pendingActions.length > 0 && (
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-xs text-yellow-600">
-                  รอ Sync: {pendingActions.length} รายการ
-                </span>
-                <button
-                  onClick={onSyncPending}
-                  disabled={!isConnected || isSyncing}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1 disabled:opacity-50"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  Sync Now
-                </button>
-              </div>
-            )}
-
-            {error && (
-              <p className="text-xs text-red-500 mt-2">{error}</p>
-            )}
-          </div>
-
-          {/* Google Script URL */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Database className="w-4 h-4 inline mr-1" />
-              Google Apps Script URL
-            </label>
-            <div className="space-y-2">
-              <input
-                type="url"
-                value={tempUrl}
-                onChange={(e) => setTempUrl(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-sm"
-                placeholder="https://script.google.com/macros/s/.../exec"
-              />
-              <button
-                onClick={handleSaveUrl}
-                disabled={isLoading}
-                className="w-full py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Check className="w-4 h-4" />
-                )}
-                บันทึกและทดสอบการเชื่อมต่อ
-              </button>
-            </div>
-          </div>
-
           {/* Gemini API Key */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1379,9 +1024,7 @@ const SettingsModal = ({
                 placeholder="AIza..."
               />
               <button
-                onClick={() => {
-                  onSaveGeminiKey(tempGeminiKey);
-                }}
+                onClick={() => onSaveGeminiKey(tempGeminiKey)}
                 disabled={tempGeminiKey === geminiApiKey}
                 className={`px-4 py-3 rounded-xl text-sm font-medium transition flex items-center gap-1 ${tempGeminiKey === geminiApiKey
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -1397,64 +1040,15 @@ const SettingsModal = ({
             </p>
           </div>
 
-          {/* Data Actions */}
-          {isConnected && (
-            <div className="border-t pt-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">จัดการข้อมูล</h3>
-              <div className="space-y-2">
-                <button
-                  onClick={onFetchData}
-                  disabled={isLoading}
-                  className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition flex items-center justify-center gap-2"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                  ดึงข้อมูลจาก Google Sheets
-                </button>
-
-                {!showImportConfirm ? (
-                  <button
-                    onClick={() => setShowImportConfirm(true)}
-                    className="w-full py-2 bg-yellow-50 text-yellow-700 rounded-lg text-sm font-medium hover:bg-yellow-100 transition"
-                  >
-                    ส่งข้อมูลปัจจุบันไป Google Sheets
-                  </button>
-                ) : (
-                  <div className="bg-yellow-50 rounded-lg p-3">
-                    <p className="text-sm text-yellow-700 mb-2">
-                      ข้อมูลปัจจุบันจะถูกเพิ่มไปยัง Google Sheets (ไม่ลบข้อมูลเดิม)
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleImportData}
-                        className="flex-1 py-2 bg-yellow-500 text-white rounded-lg text-sm font-medium"
-                      >
-                        ยืนยัน
-                      </button>
-                      <button
-                        onClick={() => setShowImportConfirm(false)}
-                        className="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium"
-                      >
-                        ยกเลิก
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Instructions */}
-          <div className="bg-indigo-50 rounded-xl p-4">
-            <h3 className="text-sm font-medium text-indigo-800 mb-2">วิธีตั้งค่า Google Sheets</h3>
-            <ol className="text-xs text-indigo-700 space-y-1 list-decimal list-inside">
-              <li>สร้าง Google Sheet ใหม่</li>
-              <li>สร้าง 5 sheets: Transactions, Projects, Attendance, Advances, Staff</li>
-              <li>ไปที่ Extensions &gt; Apps Script</li>
-              <li>วางโค้ดจากไฟล์ google-apps-script.js</li>
-              <li>Deploy &gt; New deployment &gt; Web app</li>
-              <li>Execute as: Me, Who has access: Anyone</li>
-              <li>Copy URL มาใส่ด้านบน</li>
-            </ol>
+          {/* Refresh Data */}
+          <div className="border-t pt-4">
+            <button
+              onClick={() => { onFetchData(); onClose(); }}
+              className="w-full py-2 bg-gray-100 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 transition flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              โหลดข้อมูลใหม่จาก Supabase
+            </button>
           </div>
         </div>
       </div>
@@ -2262,6 +1856,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, filterProject, setFilterProject }) => {
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all'); // all | income | expense
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
   const [selectedWeek, setSelectedWeek] = useState(() => {
     const d = new Date();
@@ -2312,8 +1907,9 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
     if (dateRange.from) {
       filtered = filtered.filter(t => t.date >= dateRange.from && t.date <= dateRange.to);
     }
+    if (typeFilter !== 'all') filtered = filtered.filter(t => t.type === typeFilter);
     return filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [transactions, filterProject, dateRange]);
+  }, [transactions, filterProject, dateRange, typeFilter]);
 
   const summary = useMemo(() => {
     const income = filteredTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
@@ -2412,6 +2008,31 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
           <p className="text-xs text-gray-500">กำไร</p>
           <p className={`text-sm font-bold ${summary.profit >= 0 ? 'text-indigo-600' : 'text-red-600'}`}>{formatCurrency(summary.profit)}</p>
         </div>
+      </div>
+
+      {/* Type Filter Tabs */}
+      <div className="flex gap-1 p-1 bg-gray-100 rounded-xl">
+        {[
+          { id: 'all', label: 'ทั้งหมด' },
+          { id: 'income', label: 'รายรับ' },
+          { id: 'expense', label: 'รายจ่าย' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setTypeFilter(tab.id)}
+            className={`flex-1 py-2 rounded-lg text-xs font-medium transition ${
+              typeFilter === tab.id
+                ? tab.id === 'income'
+                  ? 'bg-emerald-500 text-white shadow'
+                  : tab.id === 'expense'
+                    ? 'bg-red-500 text-white shadow'
+                    : 'bg-indigo-600 text-white shadow'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Project Filter */}
@@ -3273,53 +2894,25 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 };
 
 // Staff Dashboard
-const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positions = {}, onRefresh, isLoading, scriptUrl, dataLoaded }) => {
+const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positions = {}, onRefresh, isLoading, dataLoaded }) => {
   const currentMonth = getCurrentMonth();
   const [viewMode, setViewMode] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
   const [customRange, setCustomRange] = useState({ start: '', end: '' });
 
   const username = user.profile?.username || user.username || user.email?.split('@')[0];
-  const staffInfo = staffData.find(s => s.username === username || s.id === user.id) || (() => {
-    try {
-      const rawWH = localStorage.getItem('money_tracker_wage_history');
-      const wageHistoryMap = rawWH ? JSON.parse(rawWH) : {};
-      const history = wageHistoryMap[username] || [];
-      const sorted = [...history].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-      const latestWage = sorted[sorted.length - 1]?.dailyWage || 0;
-
-      const rawSD = localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES);
-      const sdMap = rawSD ? JSON.parse(rawSD) : {};
-      const sd = sdMap[username] || user.profile?.start_date || user.start_date || null;
-      const startDate = sd ? sd.split('T')[0] : null;
-
-      return {
-        id: user.id,
-        username,
-        name: user.profile?.name || user.name || username,
-        role: 'staff',
-        dailyWage: latestWage,
-        daily_wage: latestWage,
-        wageHistory: history,
-        startDate,
-        start_date: startDate,
-        position: user.profile?.position || user.position || ''
-      };
-    } catch {
-      return {
-        id: user.id,
-        username,
-        name: user.profile?.name || user.name || username,
-        role: 'staff',
-        dailyWage: 0,
-        daily_wage: 0,
-        wageHistory: [],
-        startDate: null,
-        start_date: null,
-        position: ''
-      };
-    }
-  })();
+  const staffInfo = staffData.find(s => s.username === username || s.id === user.id) || {
+    id: user.id,
+    username,
+    name: user.profile?.name || user.name || username,
+    role: 'staff',
+    dailyWage: parseFloat(user.profile?.daily_wage || user.daily_wage) || 0,
+    daily_wage: parseFloat(user.profile?.daily_wage || user.daily_wage) || 0,
+    wageHistory: [],
+    startDate: user.profile?.start_date || user.start_date || null,
+    start_date: user.profile?.start_date || user.start_date || null,
+    position: user.profile?.position || user.position || '',
+  };
 
   // รายการเดือนที่มีข้อมูล
   const availableMonths = useMemo(() => {
@@ -4063,12 +3656,7 @@ const AppContent = () => {
   const [bonuses, setBonuses] = useState(INITIAL_BONUSES);
   const [staffData, setStaffData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
-  const [staffPositions, setStaffPositions] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS);
-      return saved ? JSON.parse(saved) : {};
-    } catch { return {}; }
-  });
+  const [staffPositions, setStaffPositions] = useState({});
 
   // UI State
   const [currentPage, setCurrentPage] = useState('dashboard');
@@ -4086,13 +3674,8 @@ const AppContent = () => {
   const [filterProject, setFilterProject] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState('');
 
-  // Google Sheets Integration
-  const googleSheets = useGoogleSheets({
-    transactions: INITIAL_TRANSACTIONS,
-    projects: INITIAL_PROJECTS,
-    attendance: INITIAL_ATTENDANCE,
-    advances: INITIAL_ADVANCES
-  }, isSupabaseReady && user);
+  // Supabase Data Integration
+  const supabaseData = useSupabaseData();
 
 
   // Supabase is always configured (hardcoded)
@@ -4131,156 +3714,40 @@ const AppContent = () => {
     checkSession();
   }, [isSupabaseReady]);
 
-  // Load data from Google Sheets (including staff data)
+  // Load data from Supabase
   useEffect(() => {
     const loadData = async () => {
-      if (googleSheets.scriptUrl && !dataLoaded && user) {
-        const data = await googleSheets.fetchAllData();
-        if (data) {
-          if (data.transactions?.length > 0) setTransactions(data.transactions);
-          if (data.projects?.length > 0) setProjects(data.projects);
-          if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
-          if (data.advances?.length > 0) setAdvances(data.advances);
-          if (data.bonuses?.length > 0) setBonuses(data.bonuses);
-
-          if (data.staff?.length > 0) {
-            // โหลด staff จาก Google Sheets ปกติ
-            const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-            const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
-            const savedStartDates = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-            setStaffData(data.staff.map(s => {
-              const staffKey = s.username || s.id;
-              const wage = Number(s.dailyWage) || 0;
-              let wageHistory = savedWageHistory[staffKey];
-              if (!wageHistory || !Array.isArray(wageHistory) || wageHistory.length === 0) {
-                wageHistory = s.wageHistory;
-                if (typeof wageHistory === 'string') {
-                  try { wageHistory = JSON.parse(wageHistory); } catch { wageHistory = null; }
-                }
-              }
-              // ใช้ startDate จาก localStorage ถ้ามี (override ค่าจาก Sheet ที่อาจเป็น Supabase timestamp)
-              const startDate = savedStartDates[staffKey] || (s.startDate ? s.startDate.split('T')[0] : '');
-              if (!wageHistory || !Array.isArray(wageHistory) || wageHistory.length === 0) {
-                wageHistory = [{ dailyWage: wage, effectiveDate: startDate || '2025-01-01' }];
-              }
-              const sortedHistory = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-              const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || wage;
-              return {
-                id: s.id,
-                username: s.username,
-                name: s.name,
-                role: s.role,
-                dailyWage: latestWage,
-                daily_wage: latestWage,
-                phone: s.phone,
-                startDate,
-                start_date: startDate,
-                active: s.active !== false && s.active !== 'false',
-                wageHistory,
-                position: savedPositions[staffKey] || s.position || ''
-              };
-            }));
-          } else if (user.role === 'owner') {
-            // Staff sheet ว่าง + owner login → โหลดจาก Supabase แล้ว sync ขึ้น Google Sheets ทันที
-            try {
-              const profiles = await getAllProfiles();
-              if (profiles?.length > 0) {
-                const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-                const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
-                const savedStartDates2 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-                const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
-                if (staffProfiles.length > 0) {
-                  const mappedStaff = staffProfiles.map(p => {
-                    const staffKey = p.username || p.id;
-                    const wageHistory = savedWageHistory[staffKey] || [];
-                    const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-                    const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
-                    const startDate2 = savedStartDates2[staffKey] || (p.start_date ? p.start_date.split('T')[0] : p.created_at?.split('T')[0] || '');
-                    return {
-                      id: p.username,
-                      username: p.username,
-                      name: p.name,
-                      role: p.role || 'staff',
-                      dailyWage: latestWage,
-                      daily_wage: latestWage,
-                      phone: p.phone || '',
-                      startDate: startDate2,
-                      start_date: startDate2,
-                      active: p.active !== false,
-                      wageHistory,
-                      position: savedPositions[staffKey] || p.position || ''
-                    };
-                  });
-                  setStaffData(mappedStaff);
-                  // sync ขึ้น Google Sheets Staff sheet (id = username เพื่อให้ตรงกับ Advances)
-                  mappedStaff.forEach(s => {
-                    googleSheets.saveStaff({
-                      id: s.username,
-                      username: s.username,
-                      name: s.name,
-                      role: s.role,
-                      dailyWage: s.dailyWage,
-                      phone: s.phone,
-                      startDate: s.startDate,
-                      active: s.active,
-                      wageHistory: JSON.stringify(s.wageHistory)
-                    }, true);
-                  });
-                }
-              }
-            } catch (err) {
-              console.error('Error syncing staff to Google Sheets:', err);
-            }
-          }
-          setDataLoaded(true);
+      if (!user || dataLoaded) return;
+      const data = await supabaseData.fetchAllData();
+      if (data) {
+        if (data.transactions?.length > 0) setTransactions(data.transactions);
+        if (data.projects?.length > 0) setProjects(data.projects);
+        if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
+        if (data.advances?.length > 0) setAdvances(data.advances);
+        if (data.bonuses?.length > 0) setBonuses(data.bonuses);
+        if (data.staff?.length > 0) {
+          const wageHistoryMap = data.wageHistoryMap || {};
+          const staffProfiles = data.staff.filter(p => p.role !== 'owner' && p.active !== false);
+          setStaffData(staffProfiles.map(p => {
+            const staffKey = p.username || p.id;
+            const wageHistory = wageHistoryMap[staffKey] || [];
+            const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+            const latestWage = sorted[sorted.length - 1]?.dailyWage || parseFloat(p.daily_wage) || 0;
+            const startDate = p.start_date ? p.start_date.split('T')[0] : '';
+            return {
+              id: p.username, username: p.username, name: p.name,
+              role: p.role || 'staff', dailyWage: latestWage, daily_wage: latestWage,
+              phone: p.phone || '', startDate, start_date: startDate,
+              active: p.active !== false, wageHistory, position: p.position || '',
+            };
+          }));
         }
+        setDataLoaded(true);
       }
     };
     loadData();
-  }, [googleSheets.scriptUrl, user]);
+  }, [user]);
 
-  // Fallback: โหลด staffData จาก Supabase profiles เมื่อ Google Sheets ไม่มีข้อมูล (สำหรับ staff role)
-  useEffect(() => {
-    if (!user || staffData.length > 0) return;
-    const timer = setTimeout(async () => {
-      if (staffData.length > 0) return;
-      try {
-        const profiles = await getAllProfiles();
-        if (profiles?.length > 0) {
-          const savedWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-          const savedPositions = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
-          const savedStartDates3 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-          const staffProfiles = profiles.filter(p => p.role !== 'owner' && p.active !== false);
-          if (staffProfiles.length > 0) {
-            setStaffData(staffProfiles.map(p => {
-              const staffKey = p.username || p.id;
-              const wageHistory = savedWageHistory[staffKey] || [];
-              const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-              const latestWage = sorted[sorted.length - 1]?.dailyWage || p.daily_wage || 0;
-              const startDate3 = savedStartDates3[staffKey] || (p.start_date ? p.start_date.split('T')[0] : p.created_at?.split('T')[0] || '');
-              return {
-                id: p.username,
-                username: p.username,
-                name: p.name,
-                role: p.role || 'staff',
-                dailyWage: latestWage,
-                daily_wage: latestWage,
-                phone: p.phone || '',
-                startDate: startDate3,
-                start_date: startDate3,
-                active: p.active !== false,
-                wageHistory,
-                position: savedPositions[staffKey] || p.position || ''
-              };
-            }));
-          }
-        }
-      } catch (err) {
-        console.error('Error loading staff from profiles fallback:', err);
-      }
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [user, staffData.length]);
 
   // Load Gemini API Key from database
   useEffect(() => {
@@ -4327,213 +3794,154 @@ const AppContent = () => {
   }, []);
 
   const handleFetchData = useCallback(async () => {
-    const data = await googleSheets.fetchAllData();
-    if (data) {
-      if (data.transactions?.length > 0) setTransactions(data.transactions);
-      if (data.projects?.length > 0) setProjects(data.projects);
-      if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
-      if (data.advances?.length > 0) setAdvances(data.advances);
-      if (data.bonuses?.length > 0) setBonuses(data.bonuses);
-      if (data.staff?.length > 0) {
-        const savedWageHistoryR = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-        const savedPositions2 = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_POSITIONS) || '{}');
-        const savedStartDatesR = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-        setStaffData(data.staff.map(s => {
-          const staffKey = s.username || s.id;
-          const wage = Number(s.dailyWage) || 0;
-          let wh = savedWageHistoryR[staffKey];
-          if (!wh || !Array.isArray(wh) || wh.length === 0) {
-            wh = s.wageHistory;
-            if (typeof wh === 'string') { try { wh = JSON.parse(wh); } catch { wh = null; } }
-          }
-          const sd = savedStartDatesR[staffKey] || (s.startDate ? s.startDate.split('T')[0] : '');
-          if (!wh || !Array.isArray(wh) || wh.length === 0) {
-            wh = [{ dailyWage: wage, effectiveDate: sd || '2025-01-01' }];
-          }
-          const sortedH = [...wh].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-          const latestW = sortedH[sortedH.length - 1]?.dailyWage || wage;
-          return {
-            id: s.id,
-            username: s.username,
-            name: s.name,
-            role: s.role,
-            dailyWage: latestW,
-            daily_wage: latestW,
-            phone: s.phone,
-            startDate: sd,
-            start_date: sd,
-            active: s.active !== false && s.active !== 'false',
-            wageHistory: wh,
-            position: savedPositions2[staffKey] || s.position || ''
-          };
-        }));
-      }
+    setDataLoaded(false);
+    const data = await supabaseData.fetchAllData();
+    if (!data) return;
+    if (data.transactions?.length > 0) setTransactions(data.transactions);
+    if (data.projects?.length > 0) setProjects(data.projects);
+    if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
+    if (data.advances?.length > 0) setAdvances(data.advances);
+    if (data.bonuses?.length > 0) setBonuses(data.bonuses);
+    if (data.staff?.length > 0) {
+      const wageHistoryMap = data.wageHistoryMap || {};
+      const staffProfiles = data.staff.filter(p => p.role !== 'owner' && p.active !== false);
+      setStaffData(staffProfiles.map(p => {
+        const staffKey = p.username || p.id;
+        const wageHistory = wageHistoryMap[staffKey] || [];
+        const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+        const latestWage = sorted[sorted.length - 1]?.dailyWage || parseFloat(p.daily_wage) || 0;
+        const startDate = p.start_date ? p.start_date.split('T')[0] : '';
+        return {
+          id: p.username, username: p.username, name: p.name,
+          role: p.role || 'staff', dailyWage: latestWage, daily_wage: latestWage,
+          phone: p.phone || '', startDate, start_date: startDate,
+          active: p.active !== false, wageHistory, position: p.position || '',
+        };
+      }));
     }
-  }, [googleSheets]);
+    setDataLoaded(true);
+  }, [supabaseData]);
 
-  const handleBulkImport = useCallback(async () => {
-    return googleSheets.bulkImport({
-      transactions,
-      projects,
-      attendance,
-      advances
-    });
-  }, [googleSheets, transactions, projects, attendance, advances]);
-
-  const handleSaveTransaction = async (transaction) => {
+  const handleSaveTransaction = useCallback(async (transaction) => {
     const isNew = !editingTransaction;
-
     if (isNew) {
       setTransactions(prev => [...prev, transaction]);
     } else {
       setTransactions(prev => prev.map(t => t.id === transaction.id ? transaction : t));
     }
     setEditingTransaction(null);
+    try { await upsertTransaction(transaction); } catch (err) { console.error('handleSaveTransaction error:', err); }
+  }, [editingTransaction]);
 
-    await googleSheets.saveTransaction(transaction, isNew);
-  };
-
-  const handleDeleteTransaction = async (id) => {
+  const handleDeleteTransaction = useCallback(async (id) => {
     if (confirm('ต้องการลบรายการนี้?')) {
       setTransactions(prev => prev.filter(t => t.id !== id));
-      await googleSheets.deleteTransaction(id);
+      try { await deleteTransactionById(id); } catch (err) { console.error('handleDeleteTransaction error:', err); }
     }
-  };
+  }, []);
 
-  const handleSaveProject = async (project) => {
+  const handleSaveProject = useCallback(async (project) => {
     const isNew = !editingProject;
-
     if (isNew) {
       setProjects(prev => [...prev, project]);
     } else {
       setProjects(prev => prev.map(p => p.id === project.id ? project : p));
     }
     setEditingProject(null);
+    try { await upsertProject(project); } catch (err) { console.error('handleSaveProject error:', err); }
+  }, [editingProject]);
 
-    await googleSheets.saveProject(project, isNew);
-  };
-
-  const handleSaveAdvance = async (advance) => {
+  const handleSaveAdvance = useCallback(async (advance) => {
     setAdvances(prev => [...prev, advance]);
-    await googleSheets.saveAdvance(advance);
-  };
+    try { await insertAdvance(advance); } catch (err) { console.error('handleSaveAdvance error:', err); }
+  }, []);
 
-  const handleSaveBonus = async (bonus) => {
+  const handleDeleteAdvance = useCallback(async (id) => {
+    if (confirm('ต้องการลบรายการเบิกเงินนี้?')) {
+      setAdvances(prev => prev.filter(a => a.id !== id));
+      try { await deleteAdvanceById(id); } catch (err) { console.error('handleDeleteAdvance error:', err); }
+    }
+  }, []);
+
+  const handleSaveBonus = useCallback(async (bonus) => {
     setBonuses(prev => [...prev, bonus]);
-    await googleSheets.saveBonus(bonus);
-  };
+    try { await insertBonus(bonus); } catch (err) { console.error('handleSaveBonus error:', err); }
+  }, []);
 
-  const handleSavePosition = (staffId, position) => {
-    const updated = { ...staffPositions, [staffId]: position };
-    setStaffPositions(updated);
-    localStorage.setItem(STORAGE_KEYS.STAFF_POSITIONS, JSON.stringify(updated));
+  const handleSavePosition = useCallback(async (staffId, position) => {
     setStaffData(prev => prev.map(s => {
       if ((s.username || s.id) !== staffId) return s;
-      const updatedStaff = { ...s, position };
-      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(updatedStaff.wageHistory || []) }, false);
-      return updatedStaff;
+      return { ...s, position };
     }));
-  };
+    try { await updateProfileFields(staffId, { position }); } catch (err) { console.error('handleSavePosition error:', err); }
+  }, []);
 
-  const handleSaveAttendance = async (data) => {
+  const handleSaveAttendance = useCallback(async (data) => {
     setAttendance(prev => ({
       ...prev,
       [data.staffId]: {
         ...prev[data.staffId],
         [data.month]: {
-          workDays: data.workDays,
-          lateDays: data.lateDays,
-          absentDays: data.absentDays,
-          leaveDays: data.leaveDays,
-          bonusAmount: data.bonusAmount || 0
+          workDays: data.workDays, lateDays: data.lateDays,
+          absentDays: data.absentDays, leaveDays: data.leaveDays,
+          bonusAmount: data.bonusAmount || 0,
         }
       }
     }));
     setEditingAttendance(null);
-    await googleSheets.saveAttendance(data);
-  };
+    try { await upsertAttendance(data); } catch (err) { console.error('handleSaveAttendance error:', err); }
+  }, []);
 
-  const handleSaveWage = async ({ staffId, dailyWage, effectiveDate }) => {
-    // อ่าน wageHistory ทั้งหมดจาก localStorage
-    const allWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-
+  const handleSaveWage = useCallback(async ({ staffId, dailyWage, effectiveDate }) => {
     setStaffData(prev => prev.map(s => {
       if ((s.username || s.id) !== staffId) return s;
-      const currentHistory = s.wageHistory || [{ dailyWage: s.dailyWage || 0, effectiveDate: s.startDate || '2025-01-01' }];
-      // ตรวจสอบว่ามี entry ซ้ำวันเดียวกันไหม ถ้ามีให้อัพเดต
+      const currentHistory = s.wageHistory || [];
       const filtered = currentHistory.filter(h => h.effectiveDate !== effectiveDate);
       const newHistory = [...filtered, { dailyWage, effectiveDate }];
-      const updatedStaff = { ...s, dailyWage, daily_wage: dailyWage, wageHistory: newHistory };
-
-      // บันทึก wageHistory ลง localStorage (เก็บถาวร ไม่หายตอน reload)
-      allWageHistory[staffId] = newHistory;
-      localStorage.setItem(STORAGE_KEYS.WAGE_HISTORY, JSON.stringify(allWageHistory));
-
-      // Sync to Google Sheets
-      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(newHistory) }, false);
-      return updatedStaff;
+      const sorted = [...newHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+      const latestWage = sorted[sorted.length - 1]?.dailyWage || dailyWage;
+      return { ...s, dailyWage: latestWage, daily_wage: latestWage, wageHistory: newHistory };
     }));
-  };
+    try {
+      await upsertWageHistoryEntry(staffId, dailyWage, effectiveDate);
+      await updateProfileFields(staffId, { daily_wage: dailyWage });
+    } catch (err) { console.error('handleSaveWage error:', err); }
+  }, []);
 
-  const handleUpdateWageHistoryDate = ({ staffId, originalDate, newDate }) => {
-    const allWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-
+  const handleUpdateWageHistoryDate = useCallback(async ({ staffId, originalDate, newDate }) => {
     setStaffData(prev => prev.map(s => {
       if ((s.username || s.id) !== staffId) return s;
       const newHistory = (s.wageHistory || []).map(h =>
         h.effectiveDate === originalDate ? { ...h, effectiveDate: newDate } : h
       );
-      const sortedHistory = [...newHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-      const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || s.dailyWage;
-      const updatedStaff = { ...s, dailyWage: latestWage, daily_wage: latestWage, wageHistory: newHistory };
-
-      allWageHistory[staffId] = newHistory;
-      localStorage.setItem(STORAGE_KEYS.WAGE_HISTORY, JSON.stringify(allWageHistory));
-
-      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(newHistory) }, false);
-      return updatedStaff;
+      const sorted = [...newHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+      const latestWage = sorted[sorted.length - 1]?.dailyWage || s.dailyWage;
+      return { ...s, dailyWage: latestWage, daily_wage: latestWage, wageHistory: newHistory };
     }));
-  };
+    try { await updateWageHistoryDate(staffId, originalDate, newDate); } catch (err) { console.error('handleUpdateWageHistoryDate error:', err); }
+  }, []);
 
-  const handleDeleteWageHistoryEntry = ({ staffId, effectiveDate }) => {
-    const allWageHistory = JSON.parse(localStorage.getItem(STORAGE_KEYS.WAGE_HISTORY) || '{}');
-
+  const handleDeleteWageHistoryEntry = useCallback(async ({ staffId, effectiveDate }) => {
     setStaffData(prev => prev.map(s => {
       if ((s.username || s.id) !== staffId) return s;
       const newHistory = (s.wageHistory || []).filter(h => h.effectiveDate !== effectiveDate);
-      const sortedHistory = [...newHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
-      const latestWage = sortedHistory[sortedHistory.length - 1]?.dailyWage || s.dailyWage;
-      const updatedStaff = { ...s, dailyWage: latestWage, daily_wage: latestWage, wageHistory: newHistory };
-
-      allWageHistory[staffId] = newHistory;
-      localStorage.setItem(STORAGE_KEYS.WAGE_HISTORY, JSON.stringify(allWageHistory));
-      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(newHistory) }, false);
-      return updatedStaff;
+      const sorted = [...newHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+      const latestWage = sorted[sorted.length - 1]?.dailyWage || s.dailyWage;
+      return { ...s, dailyWage: latestWage, daily_wage: latestWage, wageHistory: newHistory };
     }));
-  };
+    try { await deleteWageHistoryEntry(staffId, effectiveDate); } catch (err) { console.error('handleDeleteWageHistoryEntry error:', err); }
+  }, []);
 
-  const handleUpdateStartDate = ({ staffId, startDate }) => {
-    // บันทึกลง localStorage
-    const allStartDates = JSON.parse(localStorage.getItem(STORAGE_KEYS.STAFF_START_DATES) || '{}');
-    allStartDates[staffId] = startDate;
-    localStorage.setItem(STORAGE_KEYS.STAFF_START_DATES, JSON.stringify(allStartDates));
-    // อัปเดต staffData state
+  const handleUpdateStartDate = useCallback(async ({ staffId, startDate }) => {
     setStaffData(prev => prev.map(s => {
       if ((s.username || s.id) !== staffId) return s;
-      const updatedStaff = { ...s, startDate, start_date: startDate };
-      // Sync to Google Sheets
-      googleSheets.saveStaff({ ...updatedStaff, wageHistory: JSON.stringify(updatedStaff.wageHistory || []) }, false);
-      return updatedStaff;
+      return { ...s, startDate, start_date: startDate };
     }));
-  };
+    try { await updateProfileFields(staffId, { start_date: startDate }); } catch (err) { console.error('handleUpdateStartDate error:', err); }
+  }, []);
 
   const handleResetPassword = async (userId, newPassword) => {
     await resetUserPassword(userId, newPassword);
-  };
-
-  const handleSaveSupabaseConfig = (url, key) => {
-    saveSupabaseConfig(url, key);
-    resetSupabaseInstance();
   };
 
   // Autocomplete suggestions
@@ -4597,23 +4005,16 @@ const AppContent = () => {
               <div className="flex items-center gap-2">
                 <p className="text-xs opacity-80">{isOwner ? 'เจ้าของกิจการ' : 'พนักงาน'}</p>
                 {isOwner && (
-                  googleSheets.isConnected ? (
-                    <Cloud className="w-3 h-3 text-emerald-300" />
-                  ) : googleSheets.isSyncing ? (
+                  supabaseData.isLoading ? (
                     <Loader2 className="w-3 h-3 animate-spin" />
                   ) : (
-                    <CloudOff className="w-3 h-3 opacity-50" />
+                    <Cloud className="w-3 h-3 text-emerald-300" />
                   )
                 )}
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isOwner && googleSheets.pendingActions.length > 0 && (
-              <span className="bg-yellow-400 text-yellow-900 text-xs px-2 py-0.5 rounded-full">
-                {googleSheets.pendingActions.length}
-              </span>
-            )}
             {isOwner && (
               <button
                 onClick={() => setShowSettingsModal(true)}
@@ -4716,8 +4117,7 @@ const AppContent = () => {
                 staffData={staffData}
                 positions={staffPositions}
                 onRefresh={handleFetchData}
-                isLoading={googleSheets.isLoading}
-                scriptUrl={googleSheets.scriptUrl}
+                isLoading={supabaseData.isLoading}
                 dataLoaded={dataLoaded}
               />
             )}
@@ -4846,23 +4246,9 @@ const AppContent = () => {
       <SettingsModal
         isOpen={showSettingsModal}
         onClose={() => setShowSettingsModal(false)}
-        scriptUrl={googleSheets.scriptUrl}
-        onSaveScriptUrl={googleSheets.saveScriptUrl}
         geminiApiKey={geminiApiKey}
         onSaveGeminiKey={handleSaveGeminiKey}
-        isConnected={googleSheets.isConnected}
-        isLoading={googleSheets.isLoading}
-        isSyncing={googleSheets.isSyncing}
-        lastSync={googleSheets.lastSync}
-        error={googleSheets.error}
-        pendingActions={googleSheets.pendingActions}
-        onTestConnection={googleSheets.testConnection}
-        onSyncPending={googleSheets.syncPendingActions}
         onFetchData={handleFetchData}
-        onBulkImport={handleBulkImport}
-        currentData={{ transactions, projects, attendance, advances }}
-        supabaseConfig={getSupabaseConfig()}
-        onSaveSupabaseConfig={handleSaveSupabaseConfig}
       />
     </div>
   );
