@@ -113,7 +113,7 @@ const INITIAL_ADVANCES = [];
 const INITIAL_BONUSES = [];
 
 // ================== GEMINI API FUNCTION ==================
-const analyzeReceiptWithGemini = async (base64Image, apiKey) => {
+const analyzeReceiptWithGemini = async (base64Image, apiKey, mimeType = 'image/jpeg') => {
   if (!apiKey) {
     throw new Error('กรุณาใส่ Gemini API Key');
   }
@@ -138,7 +138,7 @@ const analyzeReceiptWithGemini = async (base64Image, apiKey) => {
             },
             {
               inlineData: {
-                mimeType: 'image/jpeg',
+                mimeType: mimeType,
                 data: base64Image
               }
             }
@@ -540,8 +540,9 @@ const TransactionModal = ({
       const reader = new FileReader();
       reader.onload = async () => {
         const base64 = reader.result.split(',')[1];
+        const mimeType = file.type || 'image/jpeg';
         try {
-          const result = await analyzeReceiptWithGemini(base64, geminiApiKey);
+          const result = await analyzeReceiptWithGemini(base64, geminiApiKey, mimeType);
           if (result.amount) setAmount(result.amount.toString());
           if (result.items) setDescription(Array.isArray(result.items) ? result.items.join(', ') : String(result.items));
           if (result.date) setDate(result.date);
