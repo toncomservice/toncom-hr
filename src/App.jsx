@@ -119,7 +119,7 @@ const analyzeReceiptWithGemini = async (base64Image, apiKey) => {
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -153,7 +153,12 @@ const analyzeReceiptWithGemini = async (base64Image, apiKey) => {
   );
 
   if (!response.ok) {
-    throw new Error('ไม่สามารถเชื่อมต่อ Gemini API ได้');
+    const errBody = await response.json().catch(() => ({}));
+    const msg = errBody?.error?.message || `HTTP ${response.status}`;
+    if (response.status === 400) throw new Error(`API Key ไม่ถูกต้อง หรือรูปแบบคำขอผิดพลาด: ${msg}`);
+    if (response.status === 403) throw new Error(`API Key ไม่มีสิทธิ์ใช้งาน: ${msg}`);
+    if (response.status === 429) throw new Error(`เกิน quota การใช้งาน กรุณารอสักครู่: ${msg}`);
+    throw new Error(`Gemini API Error (${response.status}): ${msg}`);
   }
 
   const data = await response.json();
