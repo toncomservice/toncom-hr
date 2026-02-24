@@ -293,7 +293,7 @@ export const getAllProjectsFromDB = async () => {
   const { data, error } = await supabase
     .from('projects').select('*').order('created_at', { ascending: true });
   if (error) { console.error('getAllProjects error:', error); return []; }
-  return data.map(p => ({ id: p.id, name: p.name, client: p.client || '', status: p.status }));
+  return data.map(p => ({ id: p.id, name: p.name, client: p.client || '', status: p.status, contractValue: parseFloat(p.contract_value) || 0 }));
 };
 
 export const upsertProject = async (project) => {
@@ -302,6 +302,7 @@ export const upsertProject = async (project) => {
   const { error } = await supabase.from('projects').upsert({
     id: project.id, name: project.name,
     client: project.client || '', status: project.status || 'in_progress',
+    contract_value: parseFloat(project.contractValue) || 0,
   });
   if (error) throw error;
 };

@@ -436,30 +436,28 @@ const AutocompleteInput = ({ value, onChange, suggestions, placeholder, icon: Ic
 
 // Stats Card Component
 const StatsCard = ({ title, value, subtitle, icon: Icon, color = 'indigo', trend }) => {
-  const colorClasses = {
-    indigo: 'bg-indigo-50 text-indigo-600',
-    emerald: 'bg-emerald-50 text-emerald-600',
-    red: 'bg-red-50 text-red-600',
-    purple: 'bg-purple-50 text-purple-600',
-    yellow: 'bg-yellow-50 text-yellow-600',
+  const bgClasses = {
+    indigo: 'bg-gradient-to-br from-indigo-400 to-indigo-600',
+    emerald: 'bg-gradient-to-br from-emerald-300 to-emerald-500',
+    red: 'bg-gradient-to-br from-red-300 to-rose-500',
+    purple: 'bg-gradient-to-br from-purple-400 to-purple-600',
+    yellow: 'bg-gradient-to-br from-yellow-300 to-orange-400',
   };
 
   return (
-    <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+    <div className={`${bgClasses[color] || bgClasses.indigo} rounded-xl p-4 shadow-md`}>
       <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-gray-500">{title}</p>
-          <p className={`text-xl font-bold ${color === 'red' ? 'text-red-600' : `text-${color}-600`}`}>
-            {value}
-          </p>
-          {subtitle && <p className="text-xs text-gray-400">{subtitle}</p>}
+        <div className="flex-1 min-w-0">
+          <p className="text-xs text-white/70 font-medium">{title}</p>
+          <p className="text-xl font-bold text-white mt-0.5">{value}</p>
+          {subtitle && <p className="text-xs text-white/60 mt-0.5 leading-tight">{subtitle}</p>}
         </div>
-        <div className={`p-2 rounded-lg ${colorClasses[color]}`}>
-          <Icon className="w-5 h-5" />
+        <div className="p-2 rounded-lg bg-white/20 ml-2 flex-shrink-0">
+          <Icon className="w-5 h-5 text-white" />
         </div>
       </div>
       {trend && (
-        <div className={`mt-2 flex items-center gap-1 text-xs ${trend > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+        <div className="mt-2 flex items-center gap-1 text-xs text-white/80">
           {trend > 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           <span>{Math.abs(trend)}% จากเดือนก่อน</span>
         </div>
@@ -879,16 +877,19 @@ const ProjectModal = ({ isOpen, onClose, onSave, editingProject }) => {
   const [name, setName] = useState('');
   const [client, setClient] = useState('');
   const [status, setStatus] = useState('in_progress');
+  const [contractValue, setContractValue] = useState('');
 
   useEffect(() => {
     if (editingProject) {
       setName(editingProject.name);
       setClient(editingProject.client);
       setStatus(editingProject.status);
+      setContractValue(editingProject.contractValue > 0 ? String(editingProject.contractValue) : '');
     } else {
       setName('');
       setClient('');
       setStatus('in_progress');
+      setContractValue('');
     }
   }, [editingProject]);
 
@@ -898,7 +899,8 @@ const ProjectModal = ({ isOpen, onClose, onSave, editingProject }) => {
       id: editingProject?.id || generateId('P'),
       name,
       client,
-      status
+      status,
+      contractValue: parseFloat(contractValue) || 0,
     });
     onClose();
   };
@@ -940,6 +942,19 @@ const ProjectModal = ({ isOpen, onClose, onSave, editingProject }) => {
               placeholder="ชื่อลูกค้า / บริษัท"
               required
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">มูลค่างาน (บาท)</label>
+            <input
+              type="number"
+              value={contractValue}
+              onChange={(e) => setContractValue(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
+              placeholder="0"
+              min="0"
+            />
+            <p className="text-xs text-gray-400 mt-1">ราคาที่จะเรียกเก็บจากลูกค้า (เมื่องานเสร็จจะนับว่าเก็บเงินแล้ว)</p>
           </div>
 
           <div>
@@ -1559,6 +1574,10 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     // กำไรสุทธิ ณ ปัจจุบัน = รายรับ - รายจ่าย - ค่าแรงคงเหลือที่ยังต้องจ่าย (ทั้งหมด)
     const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
+    // มูลค่างานที่ยังไม่ได้เรียกเก็บ (in_progress เท่านั้น)
+    const uncollectedTotal = projects
+      .filter(p => p.status === 'in_progress' && p.contractValue > 0)
+      .reduce((sum, p) => sum + p.contractValue, 0);
 
     // กำไรรวมจากแต่ละโปรเจกต์ (เฉพาะโปรเจกต์ที่มีกำไรบวก)
     const filteredForStats = transactions.filter(t => inRange(t.date));
@@ -1581,7 +1600,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     // เงินสำรองฉุกเฉิน: 20% จากกำไรรวมแต่ละโปรเจกต์
     const emergencyFund = totalProjectProfit * 0.20;
 
-    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, emergencyFund, totalProjectProfit };
+    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, emergencyFund, totalProjectProfit };
   }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -1699,75 +1718,45 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         />
       </div>
 
-      <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
+      {stats.uncollectedTotal > 0 ? (
+        <div className="bg-gradient-to-r from-orange-300 to-amber-400 rounded-xl p-3 shadow-sm flex items-center justify-between">
+          <div>
+            <p className="text-xs text-white/70 font-medium">โปรเจกต์กำลังดำเนินการ</p>
+            <p className="text-xs text-white/60">{stats.activeProjects} งาน • ยังไม่เรียกเก็บ</p>
+          </div>
+          <p className="text-lg font-bold text-white">{formatCurrency(stats.uncollectedTotal)}</p>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
+      )}
 
       {/* การแบ่งเงินจากกำไรสุทธิ */}
       {stats.totalProjectProfit > 0 && (
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-sm">
+        <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-4 shadow-sm border border-indigo-100">
+          <h3 className="font-semibold text-indigo-800 mb-3 flex items-center gap-2 text-sm">
             <span className="text-base">💰</span>
             แบ่งเงินจากกำไรรวมแต่ละงาน {formatCurrency(stats.totalProjectProfit)}
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            <div className={`rounded-xl p-3 border ${stats.entertainmentRemaining < 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-100'}`}>
-              <p className="text-xs text-amber-600 font-medium mb-1">ค่าสันทนาการ (1%)</p>
-              <p className={`text-lg font-bold ${stats.entertainmentRemaining < 0 ? 'text-red-600' : 'text-amber-700'}`}>
-                {formatCurrency(stats.entertainmentRemaining)}
-              </p>
-              <p className="text-xs text-amber-500 mt-0.5">คงเหลือ</p>
-              <div className="mt-2 pt-2 border-t border-amber-200 space-y-0.5">
-                <div className="flex justify-between text-xs text-gray-500">
-                  <span>budget (1%)</span>
-                  <span className="font-medium text-amber-700">{formatCurrency(stats.entertainmentFund)}</span>
+            <div className={`rounded-xl p-3 ${stats.entertainmentRemaining < 0 ? 'bg-gradient-to-br from-red-400 to-rose-500' : 'bg-gradient-to-br from-amber-300 to-orange-400'} shadow-sm`}>
+              <p className="text-xs text-white/70 font-medium mb-1">ค่าสันทนาการ (1%)</p>
+              <p className="text-lg font-bold text-white">{formatCurrency(stats.entertainmentRemaining)}</p>
+              <p className="text-xs text-white/60 mt-0.5">คงเหลือ</p>
+              <div className="mt-2 pt-2 border-t border-white/20 space-y-0.5">
+                <div className="flex justify-between text-xs text-white/70">
+                  <span>budget</span>
+                  <span className="font-medium text-white">{formatCurrency(stats.entertainmentFund)}</span>
                 </div>
-                <div className="flex justify-between text-xs text-gray-500">
+                <div className="flex justify-between text-xs text-white/70">
                   <span>เบิกไปแล้ว</span>
-                  <span className="font-medium text-red-500">-{formatCurrency(stats.entertainmentSpent)}</span>
+                  <span className="font-medium text-white">-{formatCurrency(stats.entertainmentSpent)}</span>
                 </div>
               </div>
             </div>
-            <div className="bg-teal-50 rounded-xl p-3 border border-teal-100">
-              <p className="text-xs text-teal-600 font-medium mb-1">เงินสำรองฉุกเฉิน (20%)</p>
-              <p className="text-lg font-bold text-teal-700">{formatCurrency(stats.emergencyFund)}</p>
-              <p className="text-xs text-teal-500 mt-0.5">20% × กำไรรวมแต่ละงาน ({formatCurrency(stats.totalProjectProfit)})</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ค่าแรงสะสมถึงวันนี้ Breakdown */}
-      {stats.staffWagesAccumulated?.length > 0 && (
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-            <Users className="w-5 h-5 text-purple-500" />
-            ค่าแรงพนักงานสะสมถึงวันนี้
-          </h3>
-          <div className="space-y-2">
-            {stats.staffWagesAccumulated.map((s, i) => (
-              <div key={i} className="py-2 border-b border-gray-100 last:border-0">
-                <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm font-medium text-gray-700">{s.name}</p>
-                  <span className="text-sm font-semibold text-purple-600">{formatCurrency(s.earned)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span>เบิกไปแล้ว</span>
-                  <span className="text-orange-500">-{formatCurrency(s.advances)}</span>
-                </div>
-                <div className="flex justify-between text-xs font-medium mt-0.5">
-                  <span className="text-gray-600">คงเหลือที่ต้องจ่าย</span>
-                  <span className={s.owed > 0 ? 'text-red-500' : 'text-emerald-500'}>{formatCurrency(s.owed)}</span>
-                </div>
-              </div>
-            ))}
-            <div className="pt-2 border-t border-purple-100 space-y-1">
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>รวมค่าแรงสะสม</span>
-                <span className="font-semibold text-purple-700">{formatCurrency(stats.totalStaffWagesEarned)}</span>
-              </div>
-              <div className="flex justify-between text-sm font-bold">
-                <span className="text-gray-700">รวมคงเหลือทั้งหมด</span>
-                <span className={stats.wageOwed > 0 ? 'text-red-600' : 'text-emerald-600'}>{formatCurrency(Math.max(0, stats.wageOwed))}</span>
-              </div>
+            <div className="bg-gradient-to-br from-teal-300 to-cyan-500 rounded-xl p-3 shadow-sm">
+              <p className="text-xs text-white/70 font-medium mb-1">เงินสำรองฉุกเฉิน (20%)</p>
+              <p className="text-lg font-bold text-white">{formatCurrency(stats.emergencyFund)}</p>
+              <p className="text-xs text-white/60 mt-0.5">20% × กำไรรวมแต่ละงาน</p>
             </div>
           </div>
         </div>
@@ -2127,7 +2116,10 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
 // Owner Projects
 const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
   const projectStats = useMemo(() => {
-    return [...projects].reverse().map(p => {
+    return [...projects].sort((a, b) => {
+      if (a.status === b.status) return 0;
+      return a.status === 'in_progress' ? -1 : 1;
+    }).map(p => {
       const projectTransactions = transactions.filter(t => t.projectId === p.id);
       const income = projectTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
       const expense = projectTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
@@ -2153,30 +2145,39 @@ const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
           <div
             key={p.id}
             onClick={() => onEdit(p)}
-            className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 cursor-pointer hover:shadow-md transition"
+            className={`rounded-xl p-4 shadow-md cursor-pointer hover:shadow-lg transition ${
+              p.status === 'completed'
+                ? 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                : 'bg-gradient-to-br from-indigo-400 to-purple-500'
+            }`}
           >
-            <div className="flex items-start justify-between mb-2">
+            <div className="flex items-start justify-between mb-3">
               <div>
-                <h3 className="font-semibold text-gray-800">{p.name}</h3>
-                <p className="text-sm text-gray-500">{p.client}</p>
+                <h3 className="font-semibold text-white">{p.name}</h3>
+                <p className="text-sm text-white/70">{p.client}</p>
               </div>
-              <span className={`px-2 py-1 rounded-full text-xs font-medium ${p.status === 'completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
+              <span className="px-2 py-1 rounded-full text-xs font-medium bg-white/20 text-white">
                 {p.status === 'completed' ? 'เสร็จสิ้น' : 'กำลังดำเนินการ'}
               </span>
             </div>
+            {p.contractValue > 0 && (
+              <div className="mb-3 flex items-center justify-between text-xs px-2 py-1.5 rounded-lg bg-white/15">
+                <span className="text-white/70">มูลค่างาน</span>
+                <span className="font-semibold text-white">{formatCurrency(p.contractValue)}{p.status === 'completed' ? ' (เก็บเงินแล้ว)' : ''}</span>
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <p className="text-gray-500">รายรับ</p>
-                <p className="font-semibold text-emerald-600">{formatCurrency(p.income)}</p>
+              <div className="bg-white/15 rounded-lg p-2 text-center">
+                <p className="text-white/60 text-xs">รายรับ</p>
+                <p className="font-semibold text-emerald-300 text-xs">{formatCurrency(p.income)}</p>
               </div>
-              <div>
-                <p className="text-gray-500">รายจ่าย</p>
-                <p className="font-semibold text-red-600">{formatCurrency(p.expense)}</p>
+              <div className="bg-white/15 rounded-lg p-2 text-center">
+                <p className="text-white/60 text-xs">รายจ่าย</p>
+                <p className="font-semibold text-red-300 text-xs">{formatCurrency(p.expense)}</p>
               </div>
-              <div>
-                <p className="text-gray-500">กำไร</p>
-                <p className={`font-semibold ${p.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+              <div className="bg-white/15 rounded-lg p-2 text-center">
+                <p className="text-white/60 text-xs">กำไร</p>
+                <p className={`font-semibold text-xs ${p.profit >= 0 ? 'text-yellow-300' : 'text-red-300'}`}>
                   {formatCurrency(p.profit)}
                 </p>
               </div>
@@ -2685,7 +2686,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
       </div>
 
       {/* สรุปค่าใช้จ่ายพนักงานรายวัน */}
-      <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl p-4 text-white">
+      <div className="bg-gradient-to-r from-indigo-400 to-purple-500 rounded-xl p-4 text-white">
         <p className="text-sm opacity-90">ค่าใช้จ่ายพนักงานต่อวัน (โดยประมาณ)</p>
         <p className="text-2xl font-bold">{formatCurrency(dailyStaffExpense)}</p>
         <p className="text-xs opacity-75 mt-1">รวมค่าแรงพนักงานทุกคน/วัน</p>
@@ -2695,25 +2696,25 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 
       <div className="space-y-3">
         {allStaffStats.map(staff => (
-          <div key={staff.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+          <div key={staff.id} className="bg-gradient-to-br from-slate-500 to-slate-700 rounded-xl p-4 shadow-md">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <h3 className="font-semibold text-gray-800">{staff.name}</h3>
-                <p className="text-sm text-gray-500 flex items-center gap-1">
+                <h3 className="font-semibold text-white">{staff.name}</h3>
+                <p className="text-sm text-white/60 flex items-center gap-1">
                   {staff.role === 'owner' ? 'เจ้าของกิจการ' : (
                     <>
                       ค่าแรง/วัน: {formatCurrency(staff.dailyWage)}
                       <button
                         onClick={() => onEditWage(staff)}
-                        className="p-0.5 hover:bg-indigo-50 rounded transition"
+                        className="p-0.5 hover:bg-white/20 rounded transition"
                         title="แก้ไขค่าแรง"
                       >
-                        <Edit3 className="w-3 h-3 text-indigo-500" />
+                        <Edit3 className="w-3 h-3 text-white/70" />
                       </button>
                     </>
                   )}
                 </p>
-                <p className="text-xs text-gray-400">@{staff.username}</p>
+                <p className="text-xs text-white/40">@{staff.username}</p>
                 {staff.role === 'staff' && (
                   <div className="mt-1">
                     {editingPositionId === (staff.username || staff.id) ? (
@@ -2723,89 +2724,89 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                           value={positionInput}
                           onChange={e => setPositionInput(e.target.value)}
                           placeholder="ระบุตำแหน่ง..."
-                          className="text-xs border border-indigo-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 w-36"
+                          className="text-xs border border-white/30 bg-white/10 text-white rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-white/50 w-36 placeholder-white/40"
                           autoFocus
                           onKeyDown={e => {
                             if (e.key === 'Enter') { onSavePosition(staff.username || staff.id, positionInput); setEditingPositionId(null); }
                             if (e.key === 'Escape') setEditingPositionId(null);
                           }}
                         />
-                        <button onClick={() => { onSavePosition(staff.username || staff.id, positionInput); setEditingPositionId(null); }} className="p-0.5 text-emerald-600 hover:bg-emerald-50 rounded">
+                        <button onClick={() => { onSavePosition(staff.username || staff.id, positionInput); setEditingPositionId(null); }} className="p-0.5 text-emerald-400 hover:bg-white/10 rounded">
                           <Check className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => setEditingPositionId(null)} className="p-0.5 text-gray-400 hover:bg-gray-100 rounded">
+                        <button onClick={() => setEditingPositionId(null)} className="p-0.5 text-white/40 hover:bg-white/10 rounded">
                           <X className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 group">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${(positions[staff.username || staff.id] || staff.position) ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
+                        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-white/15 text-white/80">
                           {positions[staff.username || staff.id] || staff.position || 'ยังไม่ระบุตำแหน่ง'}
                         </span>
                         <button
                           onClick={() => { setEditingPositionId(staff.username || staff.id); setPositionInput(positions[staff.username || staff.id] || ''); }}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-indigo-50 rounded transition"
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-white/10 rounded transition"
                           title="แก้ไขตำแหน่ง"
                         >
-                          <Edit3 className="w-3 h-3 text-indigo-400" />
+                          <Edit3 className="w-3 h-3 text-white/50" />
                         </button>
                       </div>
                     )}
                   </div>
                 )}
                 {staff.role === 'staff' && staff.startDate && (
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-white/40 mt-0.5">
                     เริ่มงาน: {formatDate(staff.startDate)} ({staff.workingDaysFromStart} วันทำงาน)
                   </p>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 {staff.role === 'staff' && (
-                  <span className="text-lg font-bold text-emerald-600">{formatCurrency(staff.netSalary)}</span>
+                  <span className="text-lg font-bold text-emerald-400">{formatCurrency(staff.netSalary)}</span>
                 )}
                 <button
                   onClick={() => handleResetPassword(staff)}
-                  className="p-2 hover:bg-indigo-50 rounded-lg transition"
+                  className="p-2 hover:bg-white/10 rounded-lg transition"
                   title="ตั้งรหัสผ่านใหม่"
                 >
-                  <Lock className="w-4 h-4 text-indigo-500" />
+                  <Lock className="w-4 h-4 text-white/60" />
                 </button>
               </div>
             </div>
             {staff.role === 'staff' && (
               <>
                 {/* รายได้รวมตั้งแต่เริ่มงาน */}
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 mb-3">
+                <div className="bg-white/10 rounded-lg p-3 mb-3">
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs text-gray-500">รายได้รวม ({staff.workingDaysFromStart} วัน)</span>
-                      <span className="text-sm font-bold text-indigo-600">{formatCurrency(staff.totalWageEarnings)}</span>
+                      <span className="text-xs text-white/60">รายได้รวม ({staff.workingDaysFromStart} วัน)</span>
+                      <span className="text-sm font-bold text-blue-300">{formatCurrency(staff.totalWageEarnings)}</span>
                     </div>
                     {staff.totalAllBonuses > 0 && (
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500">ค่าแรงพิเศษสะสม</span>
-                        <span className="text-sm font-semibold text-amber-600">+{formatCurrency(staff.totalAllBonuses)}</span>
+                        <span className="text-xs text-white/60">ค่าแรงพิเศษสะสม</span>
+                        <span className="text-sm font-semibold text-yellow-300">+{formatCurrency(staff.totalAllBonuses)}</span>
                       </div>
                     )}
                     <button
-                      className="flex justify-between items-center w-full hover:bg-purple-50 rounded transition px-1 -mx-1"
+                      className="flex justify-between items-center w-full hover:bg-white/10 rounded transition px-1 -mx-1"
                       onClick={() => setExpandedAdvancesId(expandedAdvancesId === staff.username ? null : staff.username)}
                     >
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                      <span className="text-xs text-white/60 flex items-center gap-1">
                         หักเบิกแล้ว
-                        <ChevronDown className={`w-3 h-3 text-purple-400 transition-transform ${expandedAdvancesId === staff.username ? 'rotate-180' : ''}`} />
+                        <ChevronDown className={`w-3 h-3 text-purple-300 transition-transform ${expandedAdvancesId === staff.username ? 'rotate-180' : ''}`} />
                       </span>
-                      <span className="text-sm font-semibold text-purple-600">-{formatCurrency(staff.totalAllAdvances)}</span>
+                      <span className="text-sm font-semibold text-purple-300">-{formatCurrency(staff.totalAllAdvances)}</span>
                     </button>
                     {staff.totalAllDeductions > 0 && (
                       <div className="flex justify-between items-center">
-                        <span className="text-xs text-gray-500">หักสาย/ขาด</span>
-                        <span className="text-sm font-semibold text-red-500">-{formatCurrency(staff.totalAllDeductions)}</span>
+                        <span className="text-xs text-white/60">หักสาย/ขาด</span>
+                        <span className="text-sm font-semibold text-red-300">-{formatCurrency(staff.totalAllDeductions)}</span>
                       </div>
                     )}
-                    <div className="border-t border-indigo-200 pt-2 flex justify-between items-center">
-                      <span className="text-xs font-medium text-gray-600">คงเหลือสุทธิ</span>
-                      <span className={`text-lg font-bold ${staff.netTotalEarnings >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                    <div className="border-t border-white/20 pt-2 flex justify-between items-center">
+                      <span className="text-xs font-medium text-white/70">คงเหลือสุทธิ</span>
+                      <span className={`text-lg font-bold ${staff.netTotalEarnings >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {formatCurrency(staff.netTotalEarnings)}
                       </span>
                     </div>
@@ -2813,13 +2814,13 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                 </div>
                 {/* ประวัติค่าแรง */}
                 {staff.wageHistory && staff.wageHistory.length > 1 && (
-                  <div className="bg-gray-50 rounded-lg p-2 mb-3">
-                    <p className="text-xs font-medium text-gray-500 mb-1">ประวัติค่าแรง</p>
+                  <div className="bg-white/10 rounded-lg p-2 mb-3">
+                    <p className="text-xs font-medium text-white/50 mb-1">ประวัติค่าแรง</p>
                     <div className="space-y-0.5">
                       {[...staff.wageHistory].sort((a, b) => new Date(b.effectiveDate) - new Date(a.effectiveDate)).map((h, i) => (
                         <div key={i} className="flex justify-between text-xs">
-                          <span className="text-gray-400">{formatDate(h.effectiveDate)}</span>
-                          <span className={`font-medium ${i === 0 ? 'text-indigo-600' : 'text-gray-500'}`}>{formatCurrency(h.dailyWage)}/วัน</span>
+                          <span className="text-white/40">{formatDate(h.effectiveDate)}</span>
+                          <span className={`font-medium ${i === 0 ? 'text-blue-300' : 'text-white/50'}`}>{formatCurrency(h.dailyWage)}/วัน</span>
                         </div>
                       ))}
                     </div>
@@ -2827,40 +2828,40 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                 )}
                 {/* สถิติเดือนนี้ */}
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs text-gray-400">สถิติเดือนนี้</p>
+                  <p className="text-xs text-white/50">สถิติเดือนนี้</p>
                   <button
                     onClick={() => onEditAttendance(staff)}
-                    className="text-xs text-indigo-500 hover:text-indigo-700 flex items-center gap-1 transition"
+                    className="text-xs text-blue-300 hover:text-blue-200 flex items-center gap-1 transition"
                   >
                     <Edit3 className="w-3 h-3" />
                     แก้ไข
                   </button>
                 </div>
                 <div className="grid grid-cols-4 gap-2 text-xs">
-                  <div className="bg-emerald-50 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-emerald-600">{staff.attendance.workDays}</p>
-                    <p className="text-gray-500">วันทำงาน</p>
+                  <div className="bg-emerald-500/30 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-emerald-300">{staff.attendance.workDays}</p>
+                    <p className="text-white/50">วันทำงาน</p>
                   </div>
-                  <div className="bg-yellow-50 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-yellow-600">{staff.attendance.lateDays}</p>
-                    <p className="text-gray-500">สาย</p>
+                  <div className="bg-yellow-500/30 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-yellow-300">{staff.attendance.lateDays}</p>
+                    <p className="text-white/50">สาย</p>
                   </div>
-                  <div className="bg-red-50 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-red-600">{staff.attendance.absentDays}</p>
-                    <p className="text-gray-500">ขาด</p>
+                  <div className="bg-red-500/30 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-red-300">{staff.attendance.absentDays}</p>
+                    <p className="text-white/50">ขาด</p>
                   </div>
-                  <div className="bg-purple-50 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-purple-600">{formatCurrency(staff.totalAdvance)}</p>
-                    <p className="text-gray-500">เบิกเดือนนี้</p>
+                  <div className="bg-purple-500/30 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-purple-300">{formatCurrency(staff.totalAdvance)}</p>
+                    <p className="text-white/50">เบิกเดือนนี้</p>
                   </div>
                 </div>
                 {staff.monthBonusList?.length > 0 && (
-                  <div className="mt-2 bg-amber-50 rounded-lg p-2 space-y-1">
-                    <p className="text-xs font-medium text-amber-700">เงินพิเศษเดือนนี้ (+{formatCurrency(staff.monthBonus)})</p>
+                  <div className="mt-2 bg-amber-500/20 rounded-lg p-2 space-y-1">
+                    <p className="text-xs font-medium text-yellow-300">เงินพิเศษเดือนนี้ (+{formatCurrency(staff.monthBonus)})</p>
                     {staff.monthBonusList.map((b, i) => (
                       <div key={i} className="flex justify-between text-xs">
-                        <span className="text-gray-500">{formatDate(b.date)} · {b.description}</span>
-                        <span className="font-semibold text-amber-600">{formatCurrency(b.amount)}</span>
+                        <span className="text-white/50">{formatDate(b.date)} · {b.description}</span>
+                        <span className="font-semibold text-yellow-300">{formatCurrency(b.amount)}</span>
                       </div>
                     ))}
                   </div>
@@ -2868,28 +2869,28 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 
                 {/* ประวัติเบิกเงินทั้งหมด (expandable) */}
                 {expandedAdvancesId === staff.username && (
-                  <div className="mt-2 bg-purple-50 rounded-lg p-3 space-y-2">
-                    <p className="text-xs font-semibold text-purple-700">ประวัติเบิกเงินทั้งหมด</p>
+                  <div className="mt-2 bg-purple-500/20 rounded-lg p-3 space-y-2">
+                    <p className="text-xs font-semibold text-purple-300">ประวัติเบิกเงินทั้งหมด</p>
                     {(() => {
                       const staffAdvances = advances
                         .filter(a => a.staffId === staff.username)
                         .sort((a, b) => new Date(b.date) - new Date(a.date));
                       if (staffAdvances.length === 0) {
-                        return <p className="text-xs text-gray-400 text-center py-2">ยังไม่มีรายการเบิกเงิน</p>;
+                        return <p className="text-xs text-white/40 text-center py-2">ยังไม่มีรายการเบิกเงิน</p>;
                       }
                       return staffAdvances.map((adv, i) => (
-                        <div key={adv.id || i} className="flex justify-between items-start text-xs border-b border-purple-100 pb-1 last:border-0 last:pb-0">
+                        <div key={adv.id || i} className="flex justify-between items-start text-xs border-b border-white/10 pb-1 last:border-0 last:pb-0">
                           <div>
-                            <p className="font-medium text-gray-700">{adv.description || 'เบิกเงิน'}</p>
-                            <p className="text-gray-400">{formatDate(adv.date)} · เดือน {adv.month || '-'}</p>
+                            <p className="font-medium text-white/80">{adv.description || 'เบิกเงิน'}</p>
+                            <p className="text-white/40">{formatDate(adv.date)} · เดือน {adv.month || '-'}</p>
                           </div>
-                          <span className="font-semibold text-purple-600 shrink-0 ml-2">{formatCurrency(adv.amount)}</span>
+                          <span className="font-semibold text-purple-300 shrink-0 ml-2">{formatCurrency(adv.amount)}</span>
                         </div>
                       ));
                     })()}
-                    <div className="border-t border-purple-200 pt-1 flex justify-between text-xs font-semibold">
-                      <span className="text-purple-700">รวมทั้งหมด</span>
-                      <span className="text-purple-700">{formatCurrency(staff.totalAllAdvances)}</span>
+                    <div className="border-t border-white/20 pt-1 flex justify-between text-xs font-semibold">
+                      <span className="text-purple-300">รวมทั้งหมด</span>
+                      <span className="text-purple-300">{formatCurrency(staff.totalAllAdvances)}</span>
                     </div>
                   </div>
                 )}
