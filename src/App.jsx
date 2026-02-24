@@ -101,7 +101,7 @@ const useSupabaseData = () => {
 
 
 // ================== CONSTANTS & INITIAL DATA ==================
-const EXPENSE_CATEGORIES = ['ค่าอุปกรณ์', 'ค่าเดินทาง', 'ค่าแรงช่าง', 'ค่าอาหาร', 'ค่าเบ็ดเตล็ด', 'เบิกเงินพนักงาน', 'อื่นๆ'];
+const EXPENSE_CATEGORIES = ['ค่าอุปกรณ์', 'ค่าเดินทาง', 'ค่าแรงช่าง', 'ค่าอาหาร', 'ค่าเบ็ดเตล็ด', 'ค่าสันทนาการ', 'เบิกเงินพนักงาน', 'อื่นๆ'];
 const INCOME_CATEGORIES = ['ค่าติดตั้ง', 'ค่าบริการ', 'ค่าซ่อมบำรุง', 'ค่าอุปกรณ์', 'อื่นๆ'];
 
 // ข้อมูลเริ่มต้นเป็นค่าว่าง - ใช้ข้อมูลจริงจาก Google Sheets
@@ -1560,12 +1560,28 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
 
-    // กองทุนแบ่งจากกำไรสุทธิ (แสดงเฉพาะเมื่อกำไรเป็นบวก)
-    const netBase = Math.max(0, realNetProfit);
-    const entertainmentFund = netBase * 0.01;
-    const emergencyFund = netBase * 0.10;
+    // กำไรรวมจากแต่ละโปรเจกต์ (เฉพาะโปรเจกต์ที่มีกำไรบวก)
+    const filteredForStats = transactions.filter(t => inRange(t.date));
+    const projectIds = [...new Set(filteredForStats.filter(t => t.projectId).map(t => t.projectId))];
+    const totalProjectProfit = projectIds.reduce((sum, pid) => {
+      const txns = filteredForStats.filter(t => t.projectId === pid);
+      const pIncome = txns.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+      const pExpense = txns.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+      const pProfit = pIncome - pExpense;
+      return sum + Math.max(0, pProfit);
+    }, 0);
 
-    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, emergencyFund };
+    // กองทุนสันทนาการ: 1% จากกำไรรวมแต่ละโปรเจกต์
+    const entertainmentFund = totalProjectProfit * 0.01;
+    // ค่าสันทนาการที่เบิกไปแล้ว (รายจ่ายหมวด "ค่าสันทนาการ" ในช่วงที่เลือก)
+    const entertainmentSpent = filteredForStats
+      .filter(t => t.type === 'expense' && t.category === 'ค่าสันทนาการ')
+      .reduce((s, t) => s + t.amount, 0);
+    const entertainmentRemaining = entertainmentFund - entertainmentSpent;
+    // เงินสำรองฉุกเฉิน: 20% จากกำไรรวมแต่ละโปรเจกต์
+    const emergencyFund = totalProjectProfit * 0.20;
+
+    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, emergencyFund, totalProjectProfit };
   }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -1686,22 +1702,34 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       <p className="text-xs text-gray-400 text-right">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
 
       {/* การแบ่งเงินจากกำไรสุทธิ */}
-      {stats.realNetProfit > 0 && (
+      {stats.totalProjectProfit > 0 && (
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
           <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2 text-sm">
             <span className="text-base">💰</span>
-            แบ่งเงินจากกำไรสุทธิ {formatCurrency(stats.realNetProfit)}
+            แบ่งเงินจากกำไรรวมแต่ละงาน {formatCurrency(stats.totalProjectProfit)}
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-amber-50 rounded-xl p-3 border border-amber-100">
+            <div className={`rounded-xl p-3 border ${stats.entertainmentRemaining < 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-100'}`}>
               <p className="text-xs text-amber-600 font-medium mb-1">ค่าสันทนาการ (1%)</p>
-              <p className="text-lg font-bold text-amber-700">{formatCurrency(stats.entertainmentFund)}</p>
-              <p className="text-xs text-amber-500 mt-0.5">1% × กำไรสุทธิ</p>
+              <p className={`text-lg font-bold ${stats.entertainmentRemaining < 0 ? 'text-red-600' : 'text-amber-700'}`}>
+                {formatCurrency(stats.entertainmentRemaining)}
+              </p>
+              <p className="text-xs text-amber-500 mt-0.5">คงเหลือ</p>
+              <div className="mt-2 pt-2 border-t border-amber-200 space-y-0.5">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>budget (1%)</span>
+                  <span className="font-medium text-amber-700">{formatCurrency(stats.entertainmentFund)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>เบิกไปแล้ว</span>
+                  <span className="font-medium text-red-500">-{formatCurrency(stats.entertainmentSpent)}</span>
+                </div>
+              </div>
             </div>
             <div className="bg-teal-50 rounded-xl p-3 border border-teal-100">
-              <p className="text-xs text-teal-600 font-medium mb-1">เงินสำรองฉุกเฉิน (10%)</p>
+              <p className="text-xs text-teal-600 font-medium mb-1">เงินสำรองฉุกเฉิน (20%)</p>
               <p className="text-lg font-bold text-teal-700">{formatCurrency(stats.emergencyFund)}</p>
-              <p className="text-xs text-teal-500 mt-0.5">10% × กำไรสุทธิ</p>
+              <p className="text-xs text-teal-500 mt-0.5">20% × กำไรรวมแต่ละงาน ({formatCurrency(stats.totalProjectProfit)})</p>
             </div>
           </div>
         </div>
