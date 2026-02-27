@@ -1432,7 +1432,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
 
 // Revenue Chart Component
 const RevenueChart = ({ transactions, projects }) => {
-  const [period, setPeriod] = useState('month');
+  const [period, setPeriod] = useState('week');
 
   const uncollectedTotal = useMemo(() =>
     (projects || [])
