@@ -2324,18 +2324,18 @@ const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
                 <span className="font-semibold text-white">{formatCurrency(p.contractValue)}{p.status === 'completed' ? ' (เก็บเงินแล้ว)' : ''}</span>
               </div>
             )}
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div className="bg-white/15 rounded-lg p-2 text-center">
-                <p className="text-white/60 text-xs">รายรับ</p>
-                <p className="font-semibold text-emerald-300 text-xs">{formatCurrency(p.income)}</p>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-emerald-500/40 rounded-xl p-3 text-center">
+                <p className="text-emerald-100 text-xs mb-1">รายรับ</p>
+                <p className="font-bold text-white text-base leading-tight">{formatCurrency(p.income)}</p>
               </div>
-              <div className="bg-white/15 rounded-lg p-2 text-center">
-                <p className="text-white/60 text-xs">รายจ่าย</p>
-                <p className="font-semibold text-red-300 text-xs">{formatCurrency(p.expense)}</p>
+              <div className="bg-red-500/40 rounded-xl p-3 text-center">
+                <p className="text-red-100 text-xs mb-1">รายจ่าย</p>
+                <p className="font-bold text-white text-base leading-tight">{formatCurrency(p.expense)}</p>
               </div>
-              <div className="bg-white/15 rounded-lg p-2 text-center">
-                <p className="text-white/60 text-xs">กำไร</p>
-                <p className={`font-semibold text-xs ${p.profit >= 0 ? 'text-yellow-300' : 'text-red-300'}`}>
+              <div className={`rounded-xl p-3 text-center ${p.profit >= 0 ? 'bg-yellow-400/50' : 'bg-red-600/50'}`}>
+                <p className="text-yellow-100 text-xs mb-1">กำไร</p>
+                <p className={`font-bold text-base leading-tight ${p.profit >= 0 ? 'text-yellow-200' : 'text-red-200'}`}>
                   {formatCurrency(p.profit)}
                 </p>
               </div>
