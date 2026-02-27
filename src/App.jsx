@@ -2726,6 +2726,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
   const [positionInput, setPositionInput] = useState('');
   const [expandedAdvancesId, setExpandedAdvancesId] = useState(null);
   const [advanceHistoryStaff, setAdvanceHistoryStaff] = useState(null);
+  const [bonusHistoryStaff, setBonusHistoryStaff] = useState(null);
   const [editingLevelId, setEditingLevelId] = useState(null);
   const [levelInput, setLevelInput] = useState('');
 
@@ -2956,13 +2957,22 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                   )
                 )}
                 {staff.role === 'staff' && (
-                  <button
-                    onClick={() => setAdvanceHistoryStaff(staff)}
-                    className="p-2 hover:bg-white/10 rounded-lg transition"
-                    title="ประวัติการเบิก"
-                  >
-                    <FileText className="w-4 h-4 text-purple-300" />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setBonusHistoryStaff(staff)}
+                      className="p-2 hover:bg-white/10 rounded-lg transition"
+                      title="ประวัติค่าแรงพิเศษ"
+                    >
+                      <DollarSign className="w-4 h-4 text-yellow-300" />
+                    </button>
+                    <button
+                      onClick={() => setAdvanceHistoryStaff(staff)}
+                      className="p-2 hover:bg-white/10 rounded-lg transition"
+                      title="ประวัติการเบิก"
+                    >
+                      <FileText className="w-4 h-4 text-purple-300" />
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => handleResetPassword(staff)}
@@ -3099,6 +3109,107 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
           </div>
         ))}
       </div>
+
+      {/* Modal ประวัติค่าแรงพิเศษ */}
+      {bonusHistoryStaff && (() => {
+        const staffStat = allStaffStats.find(s => s.username === bonusHistoryStaff.username);
+        const staffBonuses = (bonuses || [])
+          .filter(b => b.staffId === bonusHistoryStaff.username)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        const totalAllBonus = staffBonuses.reduce((sum, b) => sum + b.amount, 0);
+
+        const byMonth = {};
+        staffBonuses.forEach(b => {
+          const m = b.month || (b.date ? b.date.slice(0, 7) : 'ไม่ระบุ');
+          if (!byMonth[m]) byMonth[m] = [];
+          byMonth[m].push(b);
+        });
+        const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center"
+            onClick={() => setBonusHistoryStaff(null)}
+          >
+            <div
+              className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] flex flex-col shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-amber-400 to-yellow-500 rounded-t-2xl sm:rounded-t-2xl p-4 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-xs text-white/80">ประวัติค่าแรงพิเศษ</p>
+                  <h3 className="font-bold text-white text-lg">{bonusHistoryStaff.name}</h3>
+                </div>
+                <button
+                  onClick={() => setBonusHistoryStaff(null)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition"
+                >
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
+
+              {/* ยอดรวม */}
+              <div className="px-4 pt-4 pb-2 shrink-0">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-amber-50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500">ค่าแรงพิเศษสะสม</p>
+                    <p className="font-bold text-amber-600 text-lg">{formatCurrency(totalAllBonus)}</p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500">จำนวนครั้ง</p>
+                    <p className="font-bold text-gray-700 text-lg">{staffBonuses.length} ครั้ง</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* รายการ */}
+              <div className="flex-1 overflow-y-auto px-4 pb-4">
+                {staffBonuses.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <DollarSign className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">ยังไม่มีประวัติค่าแรงพิเศษ</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 mt-2">
+                    {months.map(month => {
+                      const items = byMonth[month];
+                      const monthTotal = items.reduce((s, b) => s + b.amount, 0);
+                      return (
+                        <div key={month}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                              เดือน {month}
+                            </span>
+                            <span className="text-xs font-bold text-amber-600">{formatCurrency(monthTotal)}</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {items.map((b, i) => (
+                              <div key={b.id || i} className="flex items-center justify-between bg-amber-50 rounded-xl px-3 py-2">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-800">{b.description || 'เงินพิเศษ'}</p>
+                                  <p className="text-xs text-gray-400">{formatDate(b.date)}</p>
+                                </div>
+                                <span className="font-bold text-amber-600">+{formatCurrency(b.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="border-t border-gray-100 px-4 py-3 flex justify-between items-center shrink-0">
+                <span className="text-sm font-semibold text-gray-600">รวมค่าแรงพิเศษทั้งหมด</span>
+                <span className="text-lg font-bold text-amber-600">+{formatCurrency(totalAllBonus)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal ประวัติการเบิกเงิน */}
       {advanceHistoryStaff && (() => {
