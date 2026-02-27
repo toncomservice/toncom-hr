@@ -441,7 +441,7 @@ const AutocompleteInput = ({ value, onChange, suggestions, placeholder, icon: Ic
 };
 
 // Stats Card Component
-const StatsCard = ({ title, value, subtitle, icon: Icon, color = 'indigo', trend }) => {
+const StatsCard = ({ title, value, subtitle, icon: Icon, color = 'indigo', trend, large }) => {
   const bgClasses = {
     indigo: 'bg-gradient-to-br from-indigo-400 to-indigo-600',
     emerald: 'bg-gradient-to-br from-emerald-300 to-emerald-500',
@@ -451,15 +451,15 @@ const StatsCard = ({ title, value, subtitle, icon: Icon, color = 'indigo', trend
   };
 
   return (
-    <div className={`${bgClasses[color] || bgClasses.indigo} rounded-xl p-4 shadow-md`}>
+    <div className={`${bgClasses[color] || bgClasses.indigo} rounded-xl ${large ? 'p-5' : 'p-4'} shadow-md`}>
       <div className="flex items-start justify-between">
         <div className="flex-1 min-w-0">
           <p className="text-xs text-white/70 font-medium">{title}</p>
-          <p className="text-xl font-bold text-white mt-0.5">{value}</p>
+          <p className={`${large ? 'text-4xl' : 'text-xl'} font-bold text-white mt-0.5`}>{value}</p>
           {subtitle && <p className="text-xs text-white/60 mt-0.5 leading-tight">{subtitle}</p>}
         </div>
-        <div className="p-2 rounded-lg bg-white/20 ml-2 flex-shrink-0">
-          <Icon className="w-5 h-5 text-white" />
+        <div className={`${large ? 'p-3' : 'p-2'} rounded-lg bg-white/20 ml-2 flex-shrink-0`}>
+          <Icon className={`${large ? 'w-7 h-7' : 'w-5 h-5'} text-white`} />
         </div>
       </div>
       {trend && (
@@ -1667,7 +1667,6 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const expenseItems = filtered.filter(t => t.type === 'expense');
     const totalIncome = incomeItems.reduce((sum, t) => sum + t.amount, 0);
     const operatingExpense = expenseItems.reduce((sum, t) => sum + t.amount, 0);
-    const totalExpense = operatingExpense; // รายจ่าย = ค่าใช้จ่ายจากการดำเนินงาน (เงินเบิกอยู่ใน ค่าแรงคงเหลือ)
     const incomeCount = incomeItems.length;
     const expenseCount = expenseItems.length;
 
@@ -1724,6 +1723,8 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const totalStaffWagesEarned = staffWagesAccumulated.reduce((sum, s) => sum + s.earned, 0);
     const totalAdvancesAllTime = advances.reduce((sum, a) => sum + a.amount, 0);
     const wageOwed = totalStaffWagesEarned - totalAdvancesAllTime;
+    // รายจ่ายรวม = ค่าใช้จ่ายดำเนินงาน + ค่าแรงพนักงานที่จ่ายไปแล้ว
+    const totalExpense = operatingExpense + totalAdvancesAllTime;
 
     const profit = totalIncome - totalExpense;
     const netProfit = profit - totalStaffCost - totalAdvances;
@@ -1857,7 +1858,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-3">
         <StatsCard title="รายรับ" value={formatCurrency(stats.totalIncome)} subtitle={`ผลรวมรายรับทุกหมวด • ${stats.incomeCount} รายการ`} icon={TrendingUp} color="emerald" />
-        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ค่าใช้จ่ายดำเนินงาน • ${stats.expenseCount} รายการ`} icon={TrendingDown} color="red" />
+        <StatsCard title="รายจ่าย" value={formatCurrency(stats.totalExpense)} subtitle={`ดำเนินงาน ${formatCurrency(stats.operatingExpense)} + ค่าแรง ${formatCurrency(stats.totalAdvancesAllTime)}`} icon={TrendingDown} color="red" />
         <StatsCard
           title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
@@ -1866,28 +1867,26 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           color="purple"
         />
         <StatsCard
-          title="กำไรสุทธิ ณ ปัจจุบัน"
-          value={formatCurrency(stats.realNetProfit)}
-          subtitle="รายรับ - รายจ่าย - ค่าแรงคงเหลือ"
-          icon={stats.realNetProfit >= 0 ? TrendingUp : TrendingDown}
-          color={stats.realNetProfit >= 0 ? 'emerald' : 'red'}
+          title="โปรเจกต์กำลังดำเนินการ"
+          value={stats.uncollectedTotal > 0 ? formatCurrency(stats.uncollectedTotal) : `${stats.activeProjects} งาน`}
+          subtitle={stats.uncollectedTotal > 0 ? `${stats.activeProjects} งาน • ยังไม่เรียกเก็บ` : 'ไม่มียอดค้างเรียกเก็บ'}
+          icon={Briefcase}
+          color="yellow"
         />
+        <div className="col-span-2">
+          <StatsCard
+            title="กำไรสุทธิ ณ ปัจจุบัน"
+            value={formatCurrency(stats.realNetProfit)}
+            subtitle="รายรับ - รายจ่าย(รวมค่าแรง) - ค่าแรงคงเหลือ"
+            icon={stats.realNetProfit >= 0 ? TrendingUp : TrendingDown}
+            color={stats.realNetProfit >= 0 ? 'emerald' : 'red'}
+            large
+          />
+        </div>
       </div>
 
       {/* กราฟผลประกอบการ */}
       <RevenueChart transactions={transactions} projects={projects} />
-
-      {stats.uncollectedTotal > 0 ? (
-        <div className="bg-gradient-to-r from-orange-300 to-amber-400 rounded-xl p-3 shadow-sm flex items-center justify-between">
-          <div>
-            <p className="text-xs text-white/70 font-medium">โปรเจกต์กำลังดำเนินการ</p>
-            <p className="text-xs text-white/60">{stats.activeProjects} งาน • ยังไม่เรียกเก็บ</p>
-          </div>
-          <p className="text-lg font-bold text-white">{formatCurrency(stats.uncollectedTotal)}</p>
-        </div>
-      ) : (
-        <p className="text-xs text-gray-400">โปรเจกต์กำลังดำเนินการ: {stats.activeProjects} งาน</p>
-      )}
 
       {/* การแบ่งเงินจากกำไรสุทธิ */}
       {stats.totalProjectProfit > 0 && (
@@ -2726,6 +2725,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
   const [editingPositionId, setEditingPositionId] = useState(null);
   const [positionInput, setPositionInput] = useState('');
   const [expandedAdvancesId, setExpandedAdvancesId] = useState(null);
+  const [advanceHistoryStaff, setAdvanceHistoryStaff] = useState(null);
   const [editingLevelId, setEditingLevelId] = useState(null);
   const [levelInput, setLevelInput] = useState('');
 
@@ -2955,6 +2955,15 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                     </button>
                   )
                 )}
+                {staff.role === 'staff' && (
+                  <button
+                    onClick={() => setAdvanceHistoryStaff(staff)}
+                    className="p-2 hover:bg-white/10 rounded-lg transition"
+                    title="ประวัติการเบิก"
+                  >
+                    <FileText className="w-4 h-4 text-purple-300" />
+                  </button>
+                )}
                 <button
                   onClick={() => handleResetPassword(staff)}
                   className="p-2 hover:bg-white/10 rounded-lg transition"
@@ -3090,6 +3099,114 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
           </div>
         ))}
       </div>
+
+      {/* Modal ประวัติการเบิกเงิน */}
+      {advanceHistoryStaff && (() => {
+        const staffStat = allStaffStats.find(s => s.username === advanceHistoryStaff.username);
+        const staffAdvances = advances
+          .filter(a => a.staffId === advanceHistoryStaff.username)
+          .sort((a, b) => new Date(b.date) - new Date(a.date));
+        const totalAllAdv = staffAdvances.reduce((sum, a) => sum + a.amount, 0);
+
+        // จัดกลุ่มตามเดือน
+        const byMonth = {};
+        staffAdvances.forEach(adv => {
+          const m = adv.month || (adv.date ? adv.date.slice(0, 7) : 'ไม่ระบุ');
+          if (!byMonth[m]) byMonth[m] = [];
+          byMonth[m].push(adv);
+        });
+        const months = Object.keys(byMonth).sort((a, b) => b.localeCompare(a));
+
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center"
+            onClick={() => setAdvanceHistoryStaff(null)}
+          >
+            <div
+              className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] flex flex-col shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-t-2xl sm:rounded-t-2xl p-4 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-xs text-white/70">ประวัติการเบิกเงิน</p>
+                  <h3 className="font-bold text-white text-lg">{advanceHistoryStaff.name}</h3>
+                </div>
+                <button
+                  onClick={() => setAdvanceHistoryStaff(null)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition"
+                >
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
+
+              {/* ยอดรวม */}
+              <div className="px-4 pt-4 pb-2 shrink-0">
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-blue-50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500">รายได้รวม</p>
+                    <p className="font-bold text-blue-600 text-sm">{formatCurrency(staffStat?.totalEarnings || 0)}</p>
+                  </div>
+                  <div className="bg-purple-50 rounded-xl p-3 text-center">
+                    <p className="text-xs text-gray-500">เบิกแล้ว</p>
+                    <p className="font-bold text-purple-600 text-sm">{formatCurrency(totalAllAdv)}</p>
+                  </div>
+                  <div className={`rounded-xl p-3 text-center ${(staffStat?.netTotalEarnings || 0) >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                    <p className="text-xs text-gray-500">คงเหลือ</p>
+                    <p className={`font-bold text-sm ${(staffStat?.netTotalEarnings || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {formatCurrency(staffStat?.netTotalEarnings || 0)}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* รายการเบิก */}
+              <div className="flex-1 overflow-y-auto px-4 pb-4">
+                {staffAdvances.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <CreditCard className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">ยังไม่มีประวัติการเบิกเงิน</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 mt-2">
+                    {months.map(month => {
+                      const items = byMonth[month];
+                      const monthTotal = items.reduce((s, a) => s + a.amount, 0);
+                      return (
+                        <div key={month}>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                              เดือน {month}
+                            </span>
+                            <span className="text-xs font-bold text-purple-600">{formatCurrency(monthTotal)}</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {items.map((adv, i) => (
+                              <div key={adv.id || i} className="flex items-center justify-between bg-purple-50 rounded-xl px-3 py-2">
+                                <div>
+                                  <p className="text-sm font-medium text-gray-800">{adv.description || 'เบิกเงิน'}</p>
+                                  <p className="text-xs text-gray-400">{formatDate(adv.date)}</p>
+                                </div>
+                                <span className="font-bold text-purple-600">{formatCurrency(adv.amount)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer ยอดรวม */}
+              <div className="border-t border-gray-100 px-4 py-3 flex justify-between items-center shrink-0">
+                <span className="text-sm font-semibold text-gray-600">รวมเบิกทั้งหมด</span>
+                <span className="text-lg font-bold text-purple-600">{formatCurrency(totalAllAdv)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <PasswordResetModal
         isOpen={showPasswordModal}
