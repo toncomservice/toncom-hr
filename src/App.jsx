@@ -1313,8 +1313,6 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
   const [month, setMonth] = useState(getCurrentMonth());
   const [workDays, setWorkDays] = useState('');
   const [lateDays, setLateDays] = useState('');
-  const [absentDays, setAbsentDays] = useState('');
-  const [leaveDays, setLeaveDays] = useState('');
 
   useEffect(() => {
     if (editingData) {
@@ -1322,15 +1320,11 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
       setMonth(editingData.month || getCurrentMonth());
       setWorkDays(String(editingData.workDays ?? ''));
       setLateDays(String(editingData.lateDays ?? ''));
-      setAbsentDays(String(editingData.absentDays ?? ''));
-      setLeaveDays(String(editingData.leaveDays ?? ''));
     } else {
       setStaffId('');
       setMonth(getCurrentMonth());
       setWorkDays('');
       setLateDays('');
-      setAbsentDays('');
-      setLeaveDays('');
     }
   }, [editingData, isOpen]);
 
@@ -1341,8 +1335,8 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
       month,
       workDays: parseInt(workDays) || 0,
       lateDays: parseInt(lateDays) || 0,
-      absentDays: parseInt(absentDays) || 0,
-      leaveDays: parseInt(leaveDays) || 0
+      absentDays: editingData?.absentDays || 0,
+      leaveDays: editingData?.leaveDays || 0
     });
     onClose();
   };
@@ -1402,7 +1396,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">สาย (หัก 50)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">สาย (หัก 50฿)</label>
               <input
                 type="number"
                 value={lateDays}
@@ -1412,28 +1406,10 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
                 min="0"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">ขาด (หัก {ABSENT_PENALTY}฿)</label>
-              <input
-                type="number"
-                value={absentDays}
-                onChange={(e) => setAbsentDays(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-transparent transition"
-                placeholder="0"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">ลา</label>
-              <input
-                type="number"
-                value={leaveDays}
-                onChange={(e) => setLeaveDays(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                placeholder="0"
-                min="0"
-              />
-            </div>
+          </div>
+          <div className="bg-blue-50 rounded-xl px-4 py-3 text-sm text-blue-700 flex items-start gap-2">
+            <span className="mt-0.5">ℹ️</span>
+            <span>การบันทึก <strong>ขาด/ลา</strong> ให้ใช้ปุ่ม <strong>"บันทึกขาด/ลา"</strong> เพื่อระบุวันที่ให้ถูกต้อง</span>
           </div>
 
           <button
