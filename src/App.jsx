@@ -1430,6 +1430,105 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
   );
 };
 
+// Absence Log Modal (บันทึกขาด/ลา แบบง่าย)
+const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const [staffId, setStaffId] = useState('');
+  const [date, setDate] = useState(today);
+  const [type, setType] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setStaffId('');
+      setDate(today);
+      setType('');
+    }
+  }, [isOpen]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const month = date.substring(0, 7);
+    const existing = attendance?.[staffId]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0 };
+    const updated = {
+      staffId,
+      month,
+      workDays: Math.max(0, (existing.workDays || 0) - 1),
+      lateDays: existing.lateDays || 0,
+      absentDays: (existing.absentDays || 0) + (type === 'absent' ? 1 : 0),
+      leaveDays: (existing.leaveDays || 0) + (type === 'leave' ? 1 : 0),
+    };
+    onSave(updated);
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-sm sm:rounded-2xl rounded-t-2xl">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h2 className="text-lg font-bold text-gray-800">บันทึกการลางาน</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">พนักงาน</label>
+            <select
+              value={staffId}
+              onChange={(e) => setStaffId(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+              required
+            >
+              <option value="">-- เลือกพนักงาน --</option>
+              {staffList.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">วันที่</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">ประเภท</label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
+              required
+            >
+              <option value="">-- เลือกประเภท --</option>
+              <option value="absent">ขาด (หัก 1 วัน + 300฿)</option>
+              <option value="leave">ลา (หัก 1 วัน)</option>
+            </select>
+          </div>
+          {type && (
+            <div className={`rounded-xl px-4 py-3 text-sm ${type === 'absent' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+              {type === 'absent'
+                ? 'หักวันทำงาน 1 วัน และค่าปรับขาดงาน 300฿'
+                : 'หักวันทำงาน 1 วัน (ไม่มีค่าปรับเพิ่ม)'}
+            </div>
+          )}
+          <button
+            type="submit"
+            className="w-full py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 transition"
+          >
+            บันทึก
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // Revenue Chart Component
 const RevenueChart = ({ transactions, projects }) => {
   const [period, setPeriod] = useState('week');
@@ -1580,7 +1679,7 @@ const RevenueChart = ({ transactions, projects }) => {
 };
 
 // Owner Dashboard
-const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances }) => {
+const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances, bonuses }) => {
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState('all'); // custom, week, month, all
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -1593,6 +1692,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     d.setDate(d.getDate() - day + 1);
     return d.toISOString().split('T')[0];
   });
+  const [showEntertainmentModal, setShowEntertainmentModal] = useState(false);
 
   // สร้างรายการเดือนจาก transactions + advances
   const availableMonths = useMemo(() => {
@@ -1716,8 +1816,10 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         const staffAttendance = attendance?.[staff.username] || {};
         const earned = calculateEarningsFromAttendance(wageHistory, staffAttendance)
           ?? calculateEarningsWithHistory(wageHistory, staff.startDate || staff.start_date, today);
+        const staffBonuses = (bonuses || []).filter(b => b.staffId === staff.username).reduce((s, b) => s + b.amount, 0);
+        const totalEarned = (earned || 0) + staffBonuses;
         const staffAdvances = advances.filter(a => a.staffId === staff.username).reduce((s, a) => s + a.amount, 0);
-        return { name: staff.name, earned: earned || 0, advances: staffAdvances, owed: Math.max(0, (earned || 0) - staffAdvances) };
+        return { name: staff.name, earned: totalEarned, advances: staffAdvances, owed: Math.max(0, totalEarned - staffAdvances) };
       });
 
     const totalStaffWagesEarned = staffWagesAccumulated.reduce((sum, s) => sum + s.earned, 0);
@@ -1750,15 +1852,16 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     // กองทุนสันทนาการ: 1% จากกำไรรวมแต่ละโปรเจกต์
     const entertainmentFund = totalProjectProfit * 0.01;
     // ค่าสันทนาการที่เบิกไปแล้ว (รายจ่ายหมวด "ค่าสันทนาการ" ในช่วงที่เลือก)
-    const entertainmentSpent = filteredForStats
+    const entertainmentItems = filteredForStats
       .filter(t => t.type === 'expense' && t.category === 'ค่าสันทนาการ')
-      .reduce((s, t) => s + t.amount, 0);
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+    const entertainmentSpent = entertainmentItems.reduce((s, t) => s + t.amount, 0);
     const entertainmentRemaining = entertainmentFund - entertainmentSpent;
     // เงินสำรองฉุกเฉิน: 20% จากกำไรรวมแต่ละโปรเจกต์
     const emergencyFund = totalProjectProfit * 0.20;
 
-    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, emergencyFund, totalProjectProfit };
-  }, [transactions, projects, staffData, attendance, advances, inRange, monthsInRange, viewMode, dateRange]);
+    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, entertainmentItems, emergencyFund, totalProjectProfit };
+  }, [transactions, projects, staffData, attendance, advances, bonuses, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
   const filteredTransactions = useMemo(() => {
@@ -1862,7 +1965,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         <StatsCard
           title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
-          subtitle={`แรง ${formatCurrency(stats.totalStaffWagesEarned)} - เบิก ${formatCurrency(stats.totalAdvancesAllTime)}`}
+          subtitle={`แรง+พิเศษ ${formatCurrency(stats.totalStaffWagesEarned)} - เบิก ${formatCurrency(stats.totalAdvancesAllTime)}`}
           icon={Users}
           color="purple"
         />
@@ -1896,10 +1999,13 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
             แบ่งเงินจากกำไรรวมแต่ละงาน {formatCurrency(stats.totalProjectProfit)}
           </h3>
           <div className="grid grid-cols-2 gap-3">
-            <div className={`rounded-xl p-3 ${stats.entertainmentRemaining < 0 ? 'bg-gradient-to-br from-red-400 to-rose-500' : 'bg-gradient-to-br from-amber-300 to-orange-400'} shadow-sm`}>
+            <button
+              onClick={() => setShowEntertainmentModal(true)}
+              className={`rounded-xl p-3 text-left w-full ${stats.entertainmentRemaining < 0 ? 'bg-gradient-to-br from-red-400 to-rose-500' : 'bg-gradient-to-br from-amber-300 to-orange-400'} shadow-sm active:opacity-80 transition-opacity`}
+            >
               <p className="text-xs text-white/70 font-medium mb-1">ค่าสันทนาการ (1%)</p>
               <p className="text-lg font-bold text-white">{formatCurrency(stats.entertainmentRemaining)}</p>
-              <p className="text-xs text-white/60 mt-0.5">คงเหลือ</p>
+              <p className="text-xs text-white/60 mt-0.5">คงเหลือ • กดดูรายละเอียด</p>
               <div className="mt-2 pt-2 border-t border-white/20 space-y-0.5">
                 <div className="flex justify-between text-xs text-white/70">
                   <span>budget</span>
@@ -1910,11 +2016,69 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
                   <span className="font-medium text-white">-{formatCurrency(stats.entertainmentSpent)}</span>
                 </div>
               </div>
-            </div>
+            </button>
             <div className="bg-gradient-to-br from-teal-300 to-cyan-500 rounded-xl p-3 shadow-sm">
               <p className="text-xs text-white/70 font-medium mb-1">เงินสำรองฉุกเฉิน (20%)</p>
               <p className="text-lg font-bold text-white">{formatCurrency(stats.emergencyFund)}</p>
               <p className="text-xs text-white/60 mt-0.5">20% × กำไรรวมแต่ละงาน</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal ค่าสันทนาการ */}
+      {showEntertainmentModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowEntertainmentModal(false)}>
+          <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-amber-400 to-orange-500 rounded-t-2xl p-4 flex items-center justify-between shrink-0">
+              <div>
+                <p className="text-xs text-white/80">กองทุน 1% จากกำไรรวม</p>
+                <h3 className="font-bold text-white text-lg">ค่าสันทนาการ</h3>
+              </div>
+              <button onClick={() => setShowEntertainmentModal(false)} className="p-2 hover:bg-white/20 rounded-lg transition">
+                <span className="text-white text-xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="px-4 pt-4 pb-2 shrink-0">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-amber-50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-gray-500">งบทั้งหมด</p>
+                  <p className="font-bold text-amber-600">{formatCurrency(stats.entertainmentFund)}</p>
+                </div>
+                <div className="bg-red-50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-gray-500">ใช้ไปแล้ว</p>
+                  <p className="font-bold text-red-500">{formatCurrency(stats.entertainmentSpent)}</p>
+                </div>
+                <div className={`rounded-xl p-3 text-center ${stats.entertainmentRemaining < 0 ? 'bg-red-50' : 'bg-green-50'}`}>
+                  <p className="text-xs text-gray-500">คงเหลือ</p>
+                  <p className={`font-bold ${stats.entertainmentRemaining < 0 ? 'text-red-500' : 'text-green-600'}`}>{formatCurrency(stats.entertainmentRemaining)}</p>
+                </div>
+              </div>
+            </div>
+            <div className="overflow-y-auto flex-1 px-4 pb-4">
+              {stats.entertainmentItems.length === 0 ? (
+                <div className="text-center py-10 text-gray-400">
+                  <p className="text-3xl mb-2">🎉</p>
+                  <p className="text-sm">ยังไม่มีรายการค่าสันทนาการ</p>
+                </div>
+              ) : (
+                <div className="space-y-2 mt-2">
+                  {stats.entertainmentItems.map((item, i) => (
+                    <div key={item.id || i} className="flex items-start justify-between p-3 bg-amber-50 rounded-xl border border-amber-100">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{item.description || 'ไม่ระบุรายละเอียด'}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{item.date}</p>
+                        {item.projectId && (
+                          <p className="text-xs text-amber-600 mt-0.5">
+                            {projects.find(p => p.id === item.projectId)?.name || item.projectId}
+                          </p>
+                        )}
+                      </div>
+                      <p className="text-sm font-bold text-red-500 ml-3 shrink-0">-{formatCurrency(item.amount)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -2279,9 +2443,13 @@ const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
       return a.status === 'in_progress' ? -1 : 1;
     }).map(p => {
       const projectTransactions = transactions.filter(t => t.projectId === p.id);
-      const income = projectTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+      const incomeItems = projectTransactions.filter(t => t.type === 'income');
+      const income = incomeItems.reduce((sum, t) => sum + t.amount, 0);
       const expense = projectTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-      return { ...p, income, expense, profit: income - expense };
+      const lastIncomeDate = incomeItems.length > 0
+        ? incomeItems.reduce((latest, t) => t.date > latest ? t.date : latest, incomeItems[0].date)
+        : null;
+      return { ...p, income, expense, profit: income - expense, lastIncomeDate };
     });
   }, [projects, transactions]);
 
@@ -2296,6 +2464,22 @@ const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
           <Plus className="w-4 h-4" />
           เพิ่ม
         </button>
+      </div>
+
+      {/* สรุปภาพรวมโปรเจกต์ */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-indigo-600 rounded-xl p-3 text-center shadow-sm">
+          <p className="text-2xl font-bold text-white">{projectStats.length}</p>
+          <p className="text-xs text-indigo-200 mt-0.5">ทั้งหมด</p>
+        </div>
+        <div className="bg-emerald-500 rounded-xl p-3 text-center shadow-sm">
+          <p className="text-2xl font-bold text-white">{projectStats.filter(p => p.status === 'completed').length}</p>
+          <p className="text-xs text-emerald-100 mt-0.5">เสร็จสิ้น</p>
+        </div>
+        <div className="bg-amber-500 rounded-xl p-3 text-center shadow-sm">
+          <p className="text-2xl font-bold text-white">{projectStats.filter(p => p.status === 'in_progress').length}</p>
+          <p className="text-xs text-amber-100 mt-0.5">คงค้าง</p>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -2313,6 +2497,9 @@ const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
               <div>
                 <h3 className="font-semibold text-white">{p.name}</h3>
                 <p className="text-sm text-white/70">{p.client}</p>
+                {p.lastIncomeDate && (
+                  <p className="text-xs text-white/60 mt-0.5">รับเงินล่าสุด: {p.lastIncomeDate}</p>
+                )}
               </div>
               <span className="px-2 py-1 rounded-full text-xs font-medium bg-white/20 text-white">
                 {p.status === 'completed' ? 'เสร็จสิ้น' : 'กำลังดำเนินการ'}
@@ -4123,6 +4310,7 @@ const AppContent = () => {
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
   const [showBonusModal, setShowBonusModal] = useState(false);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [showAbsenceModal, setShowAbsenceModal] = useState(false);
   const [editingAttendance, setEditingAttendance] = useState(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -4507,7 +4695,7 @@ const AppContent = () => {
         {isOwner ? (
           <>
             {currentPage === 'dashboard' && (
-              <OwnerDashboard transactions={transactions} projects={projects} staffData={staffData} attendance={attendance} advances={advances} />
+              <OwnerDashboard transactions={transactions} projects={projects} staffData={staffData} attendance={attendance} advances={advances} bonuses={bonuses} />
             )}
             {currentPage === 'transactions' && (
               <OwnerTransactions
@@ -4548,10 +4736,7 @@ const AppContent = () => {
                 bonuses={bonuses}
                 onAddAdvance={() => setShowAdvanceModal(true)}
                 onAddBonus={() => setShowBonusModal(true)}
-                onAddAttendance={() => {
-                  setEditingAttendance(null);
-                  setShowAttendanceModal(true);
-                }}
+                onAddAttendance={() => setShowAbsenceModal(true)}
                 onEditAttendance={(staff) => {
                   const currentMonth = getCurrentMonth();
                   const monthAttendance = attendance[staff.username]?.[currentMonth] || {};
@@ -4697,6 +4882,14 @@ const AppContent = () => {
         onSave={handleSaveAttendance}
         staffList={staffList}
         editingData={editingAttendance}
+      />
+
+      <AbsenceLogModal
+        isOpen={showAbsenceModal}
+        onClose={() => setShowAbsenceModal(false)}
+        onSave={handleSaveAttendance}
+        staffList={staffList}
+        attendance={attendance}
       />
 
       <WageEditModal
