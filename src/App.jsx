@@ -232,6 +232,8 @@ const calculateEarningsFromAttendance = (wageHistory, attendanceByMonth) => {
   if (!wageHistory?.length || !attendanceByMonth) return null;
   const entries = Object.entries(attendanceByMonth);
   if (entries.length === 0) return null;
+  // ถ้าทุกเดือนมี workDays=0 ถือว่ายังไม่มีข้อมูลจริง ให้ใช้ fallback แทน
+  if (!entries.some(([, data]) => (data.workDays || 0) > 0)) return null;
 
   const sorted = [...wageHistory].sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
 
