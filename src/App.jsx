@@ -4282,63 +4282,6 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
         </div>
       )}
 
-      {/* Salary Breakdown */}
-      <div className="bg-gradient-to-br from-violet-500 to-purple-700 rounded-xl p-4 shadow-md">
-        <h3 className="font-semibold text-white mb-3 flex items-center gap-2">
-          <Receipt className="w-5 h-5 text-white/70" />
-          {viewMode === 'all' ? 'สรุปรายได้ทั้งหมด' : 'สรุปเงินเดือน'}
-        </h3>
-        <div className="space-y-2">
-          <div className="flex justify-between py-2 border-b border-white/20">
-            <span className="text-white/60 text-sm">
-              {stats.useWageHistory
-                ? stats.attendance.workDays > 0
-                  ? `ค่าแรงรวม (${stats.attendance.workDays} วัน)`
-                  : 'ค่าแรงรวม'
-                : `ค่าแรง (${stats.attendance.workDays} วัน x ${formatCurrency(stats.dailyWage)})`
-              }
-            </span>
-            <span className="font-medium text-emerald-300">
-              {formatCurrency(stats.grossPay - stats.bonusAmount)}
-            </span>
-          </div>
-          <div className="border-b border-white/20">
-            <div className="flex justify-between py-2">
-              <span className="text-white/60 text-sm">รวมเงินพิเศษ</span>
-              <span className="font-medium text-yellow-300">+{formatCurrency(stats.bonusAmount)}</span>
-            </div>
-            {stats.filteredBonuses?.length > 0 && (
-              <div className="pb-2 space-y-1">
-                {stats.filteredBonuses.map((b, i) => (
-                  <div key={i} className="flex justify-between items-center pl-3">
-                    <span className="text-xs text-white/40 truncate max-w-[65%]">
-                      · {b.description} <span className="text-white/30">({formatDate(b.date)})</span>
-                    </span>
-                    <span className="text-xs text-yellow-300">+{formatCurrency(b.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <div className="flex justify-between py-2 border-b border-white/20">
-            <span className="text-white/60 text-sm">หักสาย ({stats.attendance.lateDays} วัน x 50B)</span>
-            <span className="text-red-300">-{formatCurrency(stats.attendance.lateDays * 50)}</span>
-          </div>
-          <div className="flex justify-between py-2 border-b border-white/20">
-            <span className="text-white/60 text-sm">หักขาด ({stats.attendance.absentDays} วัน x {ABSENT_PENALTY}฿)</span>
-            <span className="text-red-300">-{formatCurrency(stats.attendance.absentDays * 300)}</span>
-          </div>
-          <div className="flex justify-between py-2 border-b border-white/20">
-            <span className="text-white/60 text-sm">หักเบิกเงิน</span>
-            <span className="text-red-300">-{formatCurrency(stats.totalAdvance)}</span>
-          </div>
-          <div className="flex justify-between py-3 bg-white/15 rounded-lg px-3 -mx-1 mt-1">
-            <span className="font-semibold text-white">รวมรับจริง</span>
-            <span className={`font-bold text-xl ${stats.netSalary >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>{formatCurrency(stats.netSalary)}</span>
-          </div>
-        </div>
-      </div>
-
       {/* Start Date Info (mode: all) */}
       {viewMode === 'all' && stats.startDate && (
         <div className="bg-gradient-to-r from-emerald-400 to-teal-500 rounded-xl p-4 shadow-sm">
