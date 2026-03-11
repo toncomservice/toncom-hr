@@ -2372,6 +2372,7 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
         <div className="bg-red-50 rounded-xl p-2">
           <p className="text-xs text-gray-500">รายจ่าย</p>
           <p className="text-sm font-bold text-red-600">{formatCurrency(summary.expense)}</p>
+          <p className="text-xs text-gray-400 mt-0.5">ค่าใช้จ่ายทั้งหมด ไม่รวมค่าแรง</p>
         </div>
         <div className={`rounded-xl p-2 ${summary.profit >= 0 ? 'bg-indigo-50' : 'bg-red-50'}`}>
           <p className="text-xs text-gray-500">กำไร</p>
