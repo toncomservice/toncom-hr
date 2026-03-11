@@ -4354,16 +4354,23 @@ const StaffAttendanceHistory = ({ user, attendance, absences = [], staffData }) 
                       const deduct = wage + (abs.type === 'absent' ? ABSENT_PENALTY : 0);
                       const isAbsent = abs.type === 'absent';
                       return (
-                        <div key={abs.id || i} className={`flex items-center justify-between rounded-lg px-3 py-2 ${isAbsent ? 'bg-red-500/20' : 'bg-blue-500/20'}`}>
-                          <div className="flex items-center gap-2">
-                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${isAbsent ? 'bg-red-400/30 text-red-200' : 'bg-blue-400/30 text-blue-200'}`}>
-                              {isAbsent ? 'ขาด' : 'ลา'}
-                            </span>
-                            <span className="text-xs text-white/70">
-                              {abs.isLegacy ? `เดือน ${month}` : formatDate(abs.date)}
-                            </span>
+                        <div key={abs.id || i} className={`rounded-lg px-3 py-2 ${isAbsent ? 'bg-red-500/20' : 'bg-blue-500/20'}`}>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full shrink-0 ${isAbsent ? 'bg-red-400/30 text-red-200' : 'bg-blue-400/30 text-blue-200'}`}>
+                                {isAbsent ? 'ขาด' : 'ลา'}
+                              </span>
+                              <span className="text-sm font-medium text-white">
+                                {abs.isLegacy ? `เดือน ${month}` : formatDate(abs.date)}
+                              </span>
+                            </div>
+                            <span className="text-sm font-bold text-red-300">-{formatCurrency(deduct)}</span>
                           </div>
-                          <span className="text-xs font-semibold text-red-300">-{formatCurrency(deduct)}</span>
+                          <p className="text-xs text-white/50 mt-0.5 pl-1">
+                            {isAbsent
+                              ? `หักค่าแรง ${formatCurrency(wage)} + ค่าปรับ ${ABSENT_PENALTY}฿`
+                              : `หักค่าแรง ${formatCurrency(wage)}`}
+                          </p>
                         </div>
                       );
                     })}
