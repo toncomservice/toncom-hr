@@ -4352,45 +4352,89 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
 };
 
 // Staff Attendance History
-const StaffAttendanceHistory = ({ user, attendance }) => {
+const StaffAttendanceHistory = ({ user, attendance, absences = [], staffData }) => {
   const username = user.profile?.username || user.username || user.email?.split('@')[0];
   const userAttendance = attendance[username] || {};
+  const userAbsences = (absences || []).filter(a => a.staffId === username).sort((a, b) => b.date.localeCompare(a.date));
+  const staffInfo = (staffData || []).find(s => s.username === username);
+  const wageHistory = staffInfo?.wageHistory || [{ dailyWage: staffInfo?.daily_wage || 0, effectiveDate: staffInfo?.start_date || '2025-01-01' }];
   const months = Object.keys(userAttendance).sort().reverse();
+
+  // รวม months จาก absences ด้วย (กรณียังไม่มี attendance aggregate)
+  const absenceMonths = [...new Set(userAbsences.map(a => a.date.substring(0, 7)))];
+  const allMonths = [...new Set([...months, ...absenceMonths])].sort().reverse();
 
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-800">ประวัติการทำงาน</h2>
 
-      {months.length === 0 ? (
+      {allMonths.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">
           <Calendar className="w-12 h-12 mx-auto mb-2 opacity-50" />
           <p>ยังไม่มีข้อมูลการทำงาน</p>
         </div>
       ) : (
         <div className="space-y-3">
-          {months.map(month => {
-            const data = userAttendance[month];
+          {allMonths.map(month => {
+            const data = userAttendance[month] || {};
+            const monthAbsences = userAbsences.filter(a => a.date.startsWith(month));
+            // fallback: สร้าง legacy items จาก aggregate ถ้าไม่มีใน absences table
+            const legacyAbsences = userAbsences.length === 0
+              ? [
+                  ...Array(data.absentDays || 0).fill({ type: 'absent', isLegacy: true }),
+                  ...Array(data.leaveDays || 0).fill({ type: 'leave', isLegacy: true }),
+                ]
+              : monthAbsences;
+            const [y, mo] = month.split('-').map(Number);
+            const monthEndStr = new Date(y, mo, 0).toISOString().split('T')[0];
             return (
               <div key={month} className="bg-gradient-to-br from-slate-600 to-slate-800 rounded-xl p-4 shadow-md">
                 <h3 className="font-semibold text-white mb-3">{month}</h3>
-                <div className="grid grid-cols-4 gap-2 text-sm">
+                <div className="grid grid-cols-3 gap-2 text-sm mb-3">
                   <div className="bg-emerald-500/30 rounded-lg p-2 text-center">
-                    <p className="font-bold text-emerald-300">{data.workDays}</p>
+                    <p className="font-bold text-emerald-300">{data.workDays ?? '-'}</p>
                     <p className="text-xs text-white/50">ทำงาน</p>
                   </div>
-                  <div className="bg-yellow-500/30 rounded-lg p-2 text-center">
-                    <p className="font-bold text-yellow-300">{data.lateDays}</p>
-                    <p className="text-xs text-white/50">สาย</p>
-                  </div>
                   <div className="bg-red-500/30 rounded-lg p-2 text-center">
-                    <p className="font-bold text-red-300">{data.absentDays}</p>
+                    <p className="font-bold text-red-300">{data.absentDays ?? 0}</p>
                     <p className="text-xs text-white/50">ขาด</p>
                   </div>
                   <div className="bg-blue-500/30 rounded-lg p-2 text-center">
-                    <p className="font-bold text-blue-300">{data.leaveDays}</p>
+                    <p className="font-bold text-blue-300">{data.leaveDays ?? 0}</p>
                     <p className="text-xs text-white/50">ลา</p>
                   </div>
                 </div>
+                {legacyAbsences.length > 0 && (
+                  <div className="space-y-1.5 border-t border-white/20 pt-2">
+                    {legacyAbsences.map((abs, i) => {
+                      const wage = abs.isLegacy ? getWageAtDate(wageHistory, monthEndStr) : getWageAtDate(wageHistory, abs.date);
+                      const deduct = wage + (abs.type === 'absent' ? ABSENT_PENALTY : 0);
+                      const isAbsent = abs.type === 'absent';
+                      return (
+                        <div key={abs.id || i} className={`flex items-center justify-between rounded-lg px-3 py-2 ${isAbsent ? 'bg-red-500/20' : 'bg-blue-500/20'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded-full ${isAbsent ? 'bg-red-400/30 text-red-200' : 'bg-blue-400/30 text-blue-200'}`}>
+                              {isAbsent ? 'ขาด' : 'ลา'}
+                            </span>
+                            <span className="text-xs text-white/70">
+                              {abs.isLegacy ? `เดือน ${month}` : formatDate(abs.date)}
+                            </span>
+                          </div>
+                          <span className="text-xs font-semibold text-red-300">-{formatCurrency(deduct)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {data.lateDays > 0 && (
+                  <div className="mt-1.5 flex items-center justify-between rounded-lg px-3 py-2 bg-yellow-500/20">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-yellow-400/30 text-yellow-200">สาย</span>
+                      <span className="text-xs text-white/70">{data.lateDays} ครั้ง</span>
+                    </div>
+                    <span className="text-xs font-semibold text-red-300">-{formatCurrency(data.lateDays * LATE_PENALTY)}</span>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -5169,6 +5213,8 @@ const AppContent = () => {
               <StaffAttendanceHistory
                 user={userWithProfile}
                 attendance={attendance}
+                absences={absences}
+                staffData={staffData}
               />
             )}
             {currentPage === 'advances' && (
