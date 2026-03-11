@@ -4466,10 +4466,10 @@ const StaffBonusHistory = ({ user, bonuses }) => {
       <h2 className="text-lg font-bold text-gray-800">เงินพิเศษ</h2>
 
       {/* Summary */}
-      <div className="bg-gradient-to-r from-amber-50 to-yellow-50 rounded-xl p-4 border border-amber-100">
-        <p className="text-sm text-gray-500">เงินพิเศษทั้งหมด</p>
-        <p className="text-2xl font-bold text-amber-600">{formatCurrency(totalBonuses)}</p>
-        <p className="text-xs text-gray-400 mt-1">{userBonuses.length} รายการ</p>
+      <div className="bg-gradient-to-br from-amber-400 to-orange-500 rounded-2xl p-5 shadow-lg">
+        <p className="text-sm text-white/80 font-medium">เงินพิเศษทั้งหมด</p>
+        <p className="text-3xl font-black text-white mt-1">{formatCurrency(totalBonuses)}</p>
+        <p className="text-xs text-white/70 mt-1">{userBonuses.length} รายการ</p>
       </div>
 
       {/* Bonus List by Month */}
@@ -4479,23 +4479,23 @@ const StaffBonusHistory = ({ user, bonuses }) => {
           <p>ยังไม่มีรายการเงินพิเศษ</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {months.map(month => {
             const items = byMonth[month];
             const monthTotal = items.reduce((sum, b) => sum + b.amount, 0);
             return (
-              <div key={month} className="bg-white rounded-xl shadow-sm border border-gray-100">
-                <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-amber-50 rounded-t-xl">
-                  <span className="font-semibold text-gray-700 text-sm">{month}</span>
-                  <span className="font-bold text-amber-600">{formatCurrency(monthTotal)}</span>
+              <div key={month} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-orange-100">
+                <div className="px-4 py-3 flex justify-between items-center bg-gradient-to-r from-amber-500 to-orange-500">
+                  <span className="font-bold text-white text-sm">{month}</span>
+                  <span className="font-bold text-white">{formatCurrency(monthTotal)}</span>
                 </div>
                 {items.map((b, i) => (
-                  <div key={b.id} className={`p-4 flex items-start justify-between ${i !== items.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                  <div key={b.id} className={`px-4 py-3 flex items-start justify-between ${i !== items.length - 1 ? 'border-b border-orange-50' : ''}`}>
                     <div className="flex-1 min-w-0 mr-3">
-                      <p className="font-medium text-gray-800 text-sm">{b.description}</p>
+                      <p className="font-semibold text-gray-800 text-sm">{b.description}</p>
                       <p className="text-xs text-gray-400 mt-0.5">{formatDate(b.date)}</p>
                     </div>
-                    <span className="font-bold text-amber-600 whitespace-nowrap">+{formatCurrency(b.amount)}</span>
+                    <span className="font-bold text-orange-500 whitespace-nowrap">+{formatCurrency(b.amount)}</span>
                   </div>
                 ))}
               </div>
