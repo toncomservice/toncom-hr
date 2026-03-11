@@ -4330,12 +4330,15 @@ const StaffAttendanceHistory = ({ user, attendance, absences = [], staffData }) 
               : monthAbsences;
             const [y, mo] = month.split('-').map(Number);
             const monthEndStr = new Date(y, mo, 0).toISOString().split('T')[0];
+            const todayObj = new Date();
+            const isCurrentMonth = todayObj.getFullYear() === y && todayObj.getMonth() + 1 === mo;
+            const autoWorkDays = isCurrentMonth ? todayObj.getDate() : new Date(y, mo, 0).getDate();
             return (
               <div key={month} className="bg-gradient-to-br from-slate-600 to-slate-800 rounded-xl p-4 shadow-md">
                 <h3 className="font-semibold text-white mb-3">{month}</h3>
                 <div className="grid grid-cols-3 gap-2 text-sm mb-3">
                   <div className="bg-emerald-500/30 rounded-lg p-2 text-center">
-                    <p className="font-bold text-emerald-300">{data.workDays ?? '-'}</p>
+                    <p className="font-bold text-emerald-300">{autoWorkDays}</p>
                     <p className="text-xs text-white/50">ทำงาน</p>
                   </div>
                   <div className="bg-red-500/30 rounded-lg p-2 text-center">
