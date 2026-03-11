@@ -3122,7 +3122,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
             className="bg-purple-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-purple-700 transition flex items-center gap-1"
           >
             <Clock className="w-4 h-4" />
-            บันทึกเวลา
+            บันทึกขาด/ลา
           </button>
           <button
             onClick={onAddBonus}
@@ -3601,7 +3601,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                   <div className="text-center py-10 text-gray-400">
                     <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">ยังไม่มีประวัติขาด/ลา</p>
-                    <p className="text-xs mt-1 text-gray-300">บันทึกใหม่ด้วยปุ่ม "บันทึกเวลา"</p>
+                    <p className="text-xs mt-1 text-gray-300">บันทึกใหม่ด้วยปุ่ม "บันทึกขาด/ลา"</p>
                   </div>
                 ) : (
                   <div className="space-y-2 mt-2">
