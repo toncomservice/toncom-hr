@@ -3056,29 +3056,21 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
         // absences records รายวัน (จาก table ใหม่)
         const staffAbsences = (absences || []).filter(a => a.staffId === staff.username);
 
-        // ตรวจว่ามีข้อมูล workDays จริงหรือเปล่า
-        const hasWorkDaysData = Object.values(staffAttendance).some(m => (m.workDays || 0) > 0);
+        // ใช้ calendar-based เสมอ แล้วหักวันขาด/ลาออก
+        // (ไม่ใช้ workDays aggregate เพราะ admin ไม่ได้กรอกทุกเดือน)
         const calendarBaseWage = calculateEarningsWithHistory(wageHistory, startDate, today);
 
-        let totalWageEarnings;
-        if (hasWorkDaysData) {
-          // ใช้ attendance aggregate (admin ตั้งวันทำงานแต่ละเดือน)
-          totalWageEarnings = calculateEarningsFromAttendance(wageHistory, staffAttendance) ?? calendarBaseWage;
-        } else if (staffAbsences.length > 0) {
-          // ใช้ absences table: หักค่าแรงแต่ละวันลา/ขาด
-          const absWageDeduction = staffAbsences.reduce((sum, a) => sum + getWageAtDate(wageHistory, a.date), 0);
-          totalWageEarnings = calendarBaseWage - absWageDeduction;
-        } else {
-          // fallback: หักจาก attendance aggregate (leave_days / absent_days × ค่าแรงของเดือนนั้น)
-          const aggDeduction = Object.entries(staffAttendance).reduce((total, [month, data]) => {
-            const count = (data.absentDays || 0) + (data.leaveDays || 0);
-            if (!count) return total;
-            const [y, mo] = month.split('-').map(Number);
-            const monthEnd = new Date(y, mo, 0).toISOString().split('T')[0];
-            return total + count * getWageAtDate(wageHistory, monthEnd);
-          }, 0);
-          totalWageEarnings = calendarBaseWage - aggDeduction;
-        }
+        // หักค่าแรงวันขาด/ลา: ใช้ absences table ถ้ามี ไม่งั้นใช้ aggregate
+        const leaveDeduction = staffAbsences.length > 0
+          ? staffAbsences.reduce((sum, a) => sum + getWageAtDate(wageHistory, a.date), 0)
+          : Object.entries(staffAttendance).reduce((total, [month, data]) => {
+              const count = (data.absentDays || 0) + (data.leaveDays || 0);
+              if (!count) return total;
+              const [y, mo] = month.split('-').map(Number);
+              const monthEnd = new Date(y, mo, 0).toISOString().split('T')[0];
+              return total + count * getWageAtDate(wageHistory, monthEnd);
+            }, 0);
+        const totalWageEarnings = calendarBaseWage - leaveDeduction;
         const totalEarnings = totalWageEarnings + totalAllBonuses;
 
         // คำนวณเงินเบิกทั้งหมด (ทุกเดือน)
