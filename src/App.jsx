@@ -23,8 +23,13 @@ import {
   getAllAdvancesFromDB, insertAdvance, deleteAdvanceById,
   getAllBonusesFromDB, insertBonus,
   getAllWageHistory, upsertWageHistoryEntry, deleteWageHistoryEntry, updateWageHistoryDate,
+  getAllAbsencesFromDB, insertAbsence, deleteAbsenceById,
   updateProfileFields,
 } from './lib/supabase';
+
+// ================== PENALTY CONSTANTS ==================
+const LATE_PENALTY = 50;    // ค่าปรับมาสาย (บาท/ครั้ง)
+const ABSENT_PENALTY = 100; // ค่าปรับขาดงาน (บาท/วัน)
 
 // ================== ERROR BOUNDARY ==================
 class ErrorBoundary extends React.Component {
@@ -77,7 +82,7 @@ const useSupabaseData = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff] =
+      const [transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff, absences] =
         await Promise.all([
           getAllTransactions(),
           getAllProjectsFromDB(),
@@ -86,8 +91,9 @@ const useSupabaseData = () => {
           getAllBonusesFromDB(),
           getAllWageHistory(),
           getAllProfiles(),
+          getAllAbsencesFromDB(),
         ]);
-      return { transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff };
+      return { transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff, absences };
     } catch (err) {
       console.error('fetchAllData error:', err);
       setError('ไม่สามารถดึงข้อมูลได้');
@@ -225,6 +231,16 @@ const calculateEarningsWithHistory = (wageHistory, startDate, endDate) => {
   }
 
   return totalEarnings;
+};
+
+// คืนค่าแรงรายวัน ณ วันที่ระบุ (ดูจาก wageHistory)
+const getWageAtDate = (wageHistory, date) => {
+  if (!wageHistory?.length) return 0;
+  const sorted = [...wageHistory].sort((a, b) => new Date(b.effectiveDate) - new Date(a.effectiveDate));
+  for (const entry of sorted) {
+    if (date >= entry.effectiveDate) return entry.dailyWage;
+  }
+  return sorted[sorted.length - 1]?.dailyWage || 0;
 };
 
 // คำนวณรายได้จากวันทำงานจริงใน attendance (แม่นยำกว่าใช้วันปฏิทิน)
@@ -1397,7 +1413,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">ขาด (หัก 300)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">ขาด (หัก {ABSENT_PENALTY}฿)</label>
               <input
                 type="number"
                 value={absentDays}
@@ -1451,7 +1467,7 @@ const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance }) => 
     e.preventDefault();
     const month = date.substring(0, 7);
     const existing = attendance?.[staffId]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0 };
-    const updated = {
+    const attendanceData = {
       staffId,
       month,
       workDays: Math.max(0, (existing.workDays || 0) - 1),
@@ -1459,7 +1475,8 @@ const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance }) => 
       absentDays: (existing.absentDays || 0) + (type === 'absent' ? 1 : 0),
       leaveDays: (existing.leaveDays || 0) + (type === 'leave' ? 1 : 0),
     };
-    onSave(updated);
+    const absenceRecord = { staffId, date, type };
+    onSave(attendanceData, absenceRecord);
     onClose();
   };
 
@@ -1508,14 +1525,14 @@ const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance }) => 
               required
             >
               <option value="">-- เลือกประเภท --</option>
-              <option value="absent">ขาด (หัก 1 วัน + 300฿)</option>
+              <option value="absent">ขาด (หัก 1 วัน + {ABSENT_PENALTY}฿)</option>
               <option value="leave">ลา (หัก 1 วัน)</option>
             </select>
           </div>
           {type && (
             <div className={`rounded-xl px-4 py-3 text-sm ${type === 'absent' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
               {type === 'absent'
-                ? 'หักวันทำงาน 1 วัน และค่าปรับขาดงาน 300฿'
+                ? `หักวันทำงาน 1 วัน และค่าปรับขาดงาน ${ABSENT_PENALTY}฿`
                 : 'หักวันทำงาน 1 วัน (ไม่มีค่าปรับเพิ่ม)'}
             </div>
           )}
@@ -1796,7 +1813,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           monthsInRange.forEach(month => {
             const att = attendance?.[staff.username]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0 };
             workDays += att.workDays || 0;
-            wageCost += (dailyWage * (att.workDays || 0)) - ((att.lateDays || 0) * 50) - ((att.absentDays || 0) * 300);
+            wageCost += (dailyWage * (att.workDays || 0)) - ((att.lateDays || 0) * LATE_PENALTY) - ((att.absentDays || 0) * ABSENT_PENALTY);
           });
         } else {
           workDays = daysInRange || 1;
@@ -2907,7 +2924,7 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteH
 };
 
 // Owner Staff Management
-const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
+const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
   const currentMonth = getCurrentMonth();
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -2949,7 +2966,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
         const monthBonusList = (bonuses || []).filter(b => b.staffId === staff.username && b.month === currentMonth);
         const monthBonus = monthBonusList.reduce((sum, b) => sum + b.amount, 0);
         const grossPay = dailyWage * monthAttendance.workDays + monthBonus;
-        const monthDeductions = (monthAttendance.lateDays * 50) + (monthAttendance.absentDays * 300);
+        const monthDeductions = (monthAttendance.lateDays * LATE_PENALTY) + (monthAttendance.absentDays * ABSENT_PENALTY);
         const netSalary = grossPay - monthDeductions - totalAdvance;
 
         // รายได้รวมตั้งแต่วันเริ่มงาน (คำนวณจาก wageHistory + เงินพิเศษสะสม)
@@ -2967,7 +2984,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
 
         // คำนวณหักสาย/ขาด ทุกเดือนจาก attendance Sheet
         const totalAllDeductions = Object.values(staffAttendance).reduce((sum, m) => {
-          return sum + ((m.lateDays || 0) * 50) + ((m.absentDays || 0) * 300);
+          return sum + ((m.lateDays || 0) * LATE_PENALTY) + ((m.absentDays || 0) * ABSENT_PENALTY);
         }, 0);
 
         // รายได้สุทธิตั้งแต่เริ่มงาน = รายได้รวม - เบิกทั้งหมด - หักสาย/ขาดทั้งหมด
@@ -3411,12 +3428,17 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
       {/* Modal ประวัติขาด/ลา */}
       {attendanceHistoryStaff && (() => {
         const staffUsername = attendanceHistoryStaff.username;
-        const staffAttendanceAll = attendance[staffUsername] || {};
-        const months = Object.keys(staffAttendanceAll).sort((a, b) => b.localeCompare(a));
-        const totalLate = months.reduce((s, m) => s + (staffAttendanceAll[m].lateDays || 0), 0);
-        const totalAbsent = months.reduce((s, m) => s + (staffAttendanceAll[m].absentDays || 0), 0);
-        const totalLeave = months.reduce((s, m) => s + (staffAttendanceAll[m].leaveDays || 0), 0);
-        const totalDeductions = (totalLate * 50) + (totalAbsent * 300);
+        const staffAbsences = absences
+          .filter(a => a.staffId === staffUsername)
+          .sort((a, b) => b.date.localeCompare(a.date));
+        const staffStat = allStaffStats.find(s => s.username === staffUsername);
+        const wageHistory = staffStat?.wageHistory || [];
+        const totalAbsent = staffAbsences.filter(a => a.type === 'absent').length;
+        const totalLeave = staffAbsences.filter(a => a.type === 'leave').length;
+        const totalDeduction = staffAbsences.reduce((sum, a) => {
+          const wage = getWageAtDate(wageHistory, a.date);
+          return sum + wage + (a.type === 'absent' ? ABSENT_PENALTY : 0);
+        }, 0);
 
         return (
           <div
@@ -3429,97 +3451,69 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
             >
               <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-t-2xl p-4 flex items-center justify-between shrink-0">
                 <div>
-                  <p className="text-xs text-white/80">ประวัติขาด/ลา/สาย</p>
+                  <p className="text-xs text-white/80">ประวัติขาด/ลา</p>
                   <h3 className="font-bold text-white text-lg">{attendanceHistoryStaff.name}</h3>
                 </div>
-                <button
-                  onClick={() => setAttendanceHistoryStaff(null)}
-                  className="p-2 hover:bg-white/20 rounded-lg transition"
-                >
+                <button onClick={() => setAttendanceHistoryStaff(null)} className="p-2 hover:bg-white/20 rounded-lg transition">
                   <X className="w-5 h-5 text-white" />
                 </button>
               </div>
 
               <div className="px-4 pt-4 pb-2 shrink-0">
-                <div className="grid grid-cols-4 gap-2">
-                  <div className="bg-yellow-50 rounded-xl p-2 text-center">
-                    <p className="text-lg font-bold text-yellow-600">{totalLate}</p>
-                    <p className="text-xs text-gray-500">สาย</p>
-                    <p className="text-xs text-yellow-600">-{formatCurrency(totalLate * 50)}</p>
-                  </div>
+                <div className="grid grid-cols-3 gap-2">
                   <div className="bg-red-50 rounded-xl p-2 text-center">
                     <p className="text-lg font-bold text-red-600">{totalAbsent}</p>
                     <p className="text-xs text-gray-500">ขาด</p>
-                    <p className="text-xs text-red-600">-{formatCurrency(totalAbsent * 300)}</p>
                   </div>
                   <div className="bg-blue-50 rounded-xl p-2 text-center">
                     <p className="text-lg font-bold text-blue-600">{totalLeave}</p>
                     <p className="text-xs text-gray-500">ลา</p>
-                    <p className="text-xs text-blue-500">หักวันทำงาน</p>
                   </div>
                   <div className="bg-orange-50 rounded-xl p-2 text-center">
-                    <p className="text-sm font-bold text-orange-600">{formatCurrency(totalDeductions)}</p>
+                    <p className="text-sm font-bold text-orange-600">{formatCurrency(totalDeduction)}</p>
                     <p className="text-xs text-gray-500">หักรวม</p>
-                    <p className="text-xs text-gray-400">ค่าปรับ</p>
                   </div>
                 </div>
               </div>
 
               <div className="overflow-y-auto flex-1 px-4 pb-4">
-                {months.length === 0 ? (
+                {staffAbsences.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">
                     <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
-                    <p className="text-sm">ยังไม่มีบันทึกการเข้างาน</p>
+                    <p className="text-sm">ยังไม่มีประวัติขาด/ลา</p>
+                    <p className="text-xs mt-1 text-gray-300">บันทึกใหม่ด้วยปุ่ม "บันทึกเวลา"</p>
                   </div>
                 ) : (
                   <div className="space-y-2 mt-2">
-                    {months.map(month => {
-                      const att = staffAttendanceAll[month];
-                      const deduction = ((att.lateDays || 0) * 50) + ((att.absentDays || 0) * 300);
-                      const isCurrentMonth = month === getCurrentMonth();
+                    {staffAbsences.map((abs) => {
+                      const wage = getWageAtDate(wageHistory, abs.date);
+                      const deductAmt = wage + (abs.type === 'absent' ? ABSENT_PENALTY : 0);
+                      const isAbsent = abs.type === 'absent';
                       return (
-                        <div key={month} className={`rounded-xl border p-3 ${isCurrentMonth ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'}`}>
-                          <div className="flex items-center justify-between mb-2">
-                            <span className={`text-sm font-semibold ${isCurrentMonth ? 'text-blue-700' : 'text-gray-700'}`}>
-                              {month} {isCurrentMonth && <span className="text-xs font-normal text-blue-500">(เดือนนี้)</span>}
-                            </span>
+                        <div key={abs.id} className={`flex items-center justify-between p-3 rounded-xl border ${isAbsent ? 'bg-red-50 border-red-100' : 'bg-blue-50 border-blue-100'}`}>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isAbsent ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                                {isAbsent ? 'ขาด' : 'ลา'}
+                              </span>
+                              <span className="text-sm font-medium text-gray-800">{abs.date}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {isAbsent
+                                ? `ค่าแรง ${formatCurrency(wage)} + ค่าปรับ ${ABSENT_PENALTY}฿`
+                                : `ค่าแรง ${formatCurrency(wage)}`}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <span className="text-sm font-bold text-red-600">-{formatCurrency(deductAmt)}</span>
                             <button
-                              onClick={() => {
-                                setAttendanceHistoryStaff(null);
-                                onEditAttendance(attendanceHistoryStaff, month);
-                              }}
-                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg transition"
+                              onClick={() => onDeleteAbsence(abs)}
+                              className="p-1.5 hover:bg-red-100 rounded-lg transition"
+                              title="ลบรายการ"
                             >
-                              <Edit3 className="w-3 h-3" />
-                              แก้ไข
+                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
                             </button>
                           </div>
-                          <div className="grid grid-cols-4 gap-1.5 text-xs">
-                            <div className="bg-emerald-100 rounded-lg p-1.5 text-center">
-                              <p className="font-bold text-emerald-700">{att.workDays || 0}</p>
-                              <p className="text-gray-500">วันทำงาน</p>
-                            </div>
-                            <div className="bg-yellow-100 rounded-lg p-1.5 text-center">
-                              <p className="font-bold text-yellow-700">{att.lateDays || 0}</p>
-                              <p className="text-gray-500">สาย</p>
-                            </div>
-                            <div className="bg-red-100 rounded-lg p-1.5 text-center">
-                              <p className="font-bold text-red-700">{att.absentDays || 0}</p>
-                              <p className="text-gray-500">ขาด</p>
-                            </div>
-                            <div className="bg-blue-100 rounded-lg p-1.5 text-center">
-                              <p className="font-bold text-blue-700">{att.leaveDays || 0}</p>
-                              <p className="text-gray-500">ลา</p>
-                            </div>
-                          </div>
-                          {deduction > 0 && (
-                            <div className="mt-2 flex justify-between items-center text-xs border-t border-gray-200 pt-1.5">
-                              <span className="text-gray-500">
-                                หัก: {att.lateDays > 0 ? `สาย ${att.lateDays}×50฿` : ''}{att.lateDays > 0 && att.absentDays > 0 ? ' + ' : ''}{att.absentDays > 0 ? `ขาด ${att.absentDays}×300฿` : ''}
-                              </span>
-                              <span className="font-semibold text-red-600">-{formatCurrency(deduction)}</span>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
@@ -3535,11 +3529,11 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                   }}
                   className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
                 >
-                  <Plus className="w-4 h-4" />
-                  เพิ่ม/แก้ไขเดือนใหม่
+                  <Edit3 className="w-4 h-4" />
+                  แก้ไขตัวเลขรายเดือน
                 </button>
                 <span className="text-sm font-semibold text-red-600">
-                  หักรวม: -{formatCurrency(totalDeductions)}
+                  หักรวม: -{formatCurrency(totalDeduction)}
                 </span>
               </div>
             </div>
@@ -3816,7 +3810,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
     const grossPay = viewMode === 'all' && totalEarningsFromHistory !== null
       ? totalEarningsFromHistory + bonusAmount
       : dailyWage * aggregatedAttendance.workDays + bonusAmount;
-    const deductions = (aggregatedAttendance.lateDays * 50) + (aggregatedAttendance.absentDays * 300);
+    const deductions = (aggregatedAttendance.lateDays * LATE_PENALTY) + (aggregatedAttendance.absentDays * ABSENT_PENALTY);
     const netSalary = grossPay - deductions - totalAdvance;
     // เบิกได้อีก: คำนวณจากเดือนปัจจุบันเสมอ (ไม่ขึ้นกับ viewMode)
     const currentMonthData = userAttendance[currentMonth] || {};
@@ -3835,7 +3829,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
     const totalAllAdvances = allTimeAdvances.reduce((sum, a) => sum + a.amount, 0);
     const staffAttendanceAll = attendance[username] || {};
     const totalAllDeductions = Object.values(staffAttendanceAll).reduce((sum, m) => {
-      return sum + ((m.lateDays || 0) * 50) + ((m.absentDays || 0) * 300);
+      return sum + ((m.lateDays || 0) * LATE_PENALTY) + ((m.absentDays || 0) * ABSENT_PENALTY);
     }, 0);
     const totalAllBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
     const todayStr = new Date().toISOString().split('T')[0];
@@ -4143,7 +4137,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
             <span className="text-red-300">-{formatCurrency(stats.attendance.lateDays * 50)}</span>
           </div>
           <div className="flex justify-between py-2 border-b border-white/20">
-            <span className="text-white/60 text-sm">หักขาด ({stats.attendance.absentDays} วัน x 300B)</span>
+            <span className="text-white/60 text-sm">หักขาด ({stats.attendance.absentDays} วัน x {ABSENT_PENALTY}฿)</span>
             <span className="text-red-300">-{formatCurrency(stats.attendance.absentDays * 300)}</span>
           </div>
           <div className="flex justify-between py-2 border-b border-white/20">
@@ -4448,6 +4442,7 @@ const AppContent = () => {
   const [attendance, setAttendance] = useState(INITIAL_ATTENDANCE);
   const [advances, setAdvances] = useState(INITIAL_ADVANCES);
   const [bonuses, setBonuses] = useState(INITIAL_BONUSES);
+  const [absences, setAbsences] = useState([]);
   const [staffData, setStaffData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
   const [staffPositions, setStaffPositions] = useState({});
@@ -4520,6 +4515,7 @@ const AppContent = () => {
         if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
         if (data.advances?.length > 0) setAdvances(data.advances);
         if (data.bonuses?.length > 0) setBonuses(data.bonuses);
+        if (data.absences?.length > 0) setAbsences(data.absences);
         if (data.staff?.length > 0) {
           const wageHistoryMap = data.wageHistoryMap || {};
           const staffProfiles = data.staff.filter(p => p.role !== 'owner' && p.active !== false);
@@ -4696,6 +4692,35 @@ const AppContent = () => {
     }));
     setEditingAttendance(null);
     try { await upsertAttendance(data); } catch (err) { console.error('handleSaveAttendance error:', err); }
+  }, []);
+
+  const handleSaveAbsenceLog = useCallback(async (attendanceData, absenceRecord) => {
+    // อัปเดต attendance aggregate
+    await handleSaveAttendance(attendanceData);
+    // เพิ่ม absence record รายวัน
+    const newAbsence = { id: `ABS${Date.now()}`, staffId: absenceRecord.staffId, date: absenceRecord.date, type: absenceRecord.type };
+    setAbsences(prev => [newAbsence, ...prev]);
+    try { await insertAbsence(newAbsence); } catch (err) { console.error('insertAbsence error:', err); }
+  }, [handleSaveAttendance]);
+
+  const handleDeleteAbsence = useCallback(async (absence) => {
+    // ลบจาก list
+    setAbsences(prev => prev.filter(a => a.id !== absence.id));
+    // ลด aggregate
+    const month = absence.date.substring(0, 7);
+    setAttendance(prev => {
+      const existing = prev[absence.staffId]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0 };
+      const updated = {
+        ...existing,
+        workDays: (existing.workDays || 0) + 1,
+        absentDays: absence.type === 'absent' ? Math.max(0, (existing.absentDays || 0) - 1) : (existing.absentDays || 0),
+        leaveDays: absence.type === 'leave' ? Math.max(0, (existing.leaveDays || 0) - 1) : (existing.leaveDays || 0),
+      };
+      const updatedState = { ...prev, [absence.staffId]: { ...prev[absence.staffId], [month]: updated } };
+      upsertAttendance({ staffId: absence.staffId, month, ...updated }).catch(err => console.error(err));
+      return updatedState;
+    });
+    try { await deleteAbsenceById(absence.id); } catch (err) { console.error('deleteAbsence error:', err); }
   }, []);
 
   const handleSaveWage = useCallback(async ({ staffId, dailyWage, effectiveDate }) => {
@@ -4904,6 +4929,8 @@ const AppContent = () => {
                   setEditingWageStaff(staff);
                   setShowWageModal(true);
                 }}
+                absences={absences}
+                onDeleteAbsence={handleDeleteAbsence}
                 positions={staffPositions}
                 onSavePosition={handleSavePosition}
                 onSaveLevel={handleSaveLevel}
@@ -5036,7 +5063,7 @@ const AppContent = () => {
       <AbsenceLogModal
         isOpen={showAbsenceModal}
         onClose={() => setShowAbsenceModal(false)}
-        onSave={handleSaveAttendance}
+        onSave={handleSaveAbsenceLog}
         staffList={staffList}
         attendance={attendance}
       />

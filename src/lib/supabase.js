@@ -439,6 +439,32 @@ export const updateWageHistoryDate = async (staffId, originalDate, newDate) => {
   if (error) throw error;
 };
 
+// ==================== ABSENCES ====================
+export const getAllAbsencesFromDB = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('absences').select('*').order('date', { ascending: false });
+  if (error) { console.error('getAllAbsences error:', error); return []; }
+  return data.map(a => ({ id: a.id, staffId: a.staff_id, date: a.date, type: a.type }));
+};
+
+export const insertAbsence = async (absence) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('absences').insert({
+    id: absence.id, staff_id: absence.staffId, date: absence.date, type: absence.type,
+  });
+  if (error) throw error;
+};
+
+export const deleteAbsenceById = async (id) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('absences').delete().eq('id', id);
+  if (error) throw error;
+};
+
 // ==================== PROFILE FIELDS ====================
 export const updateProfileFields = async (username, fields) => {
   const supabase = getSupabase();
