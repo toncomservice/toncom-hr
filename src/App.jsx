@@ -4024,6 +4024,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
       totalAllBonuses,
       totalAllAdvances,
       totalAllDeductions,
+      leaveDeduction,
       netTotalEarnings
     };
   }, [user, attendance, advances, bonuses, absences, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo, currentMonth]);
@@ -4101,9 +4102,15 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
               <span className="text-xs text-white/60">หักเบิกแล้ว</span>
               <span className="text-sm font-semibold text-purple-300">-{formatCurrency(stats.totalAllAdvances)}</span>
             </div>
+            {stats.leaveDeduction > 0 && (
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-white/60">หักขาด/ลา</span>
+                <span className="text-sm font-semibold text-orange-300">-{formatCurrency(stats.leaveDeduction)}</span>
+              </div>
+            )}
             {stats.totalAllDeductions > 0 && (
               <div className="flex justify-between items-center">
-                <span className="text-xs text-white/60">หักสาย/ขาด</span>
+                <span className="text-xs text-white/60">หักสาย/ขาด (ค่าปรับ)</span>
                 <span className="text-sm font-semibold text-red-300">-{formatCurrency(stats.totalAllDeductions)}</span>
               </div>
             )}
