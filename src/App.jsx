@@ -3106,6 +3106,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
           totalAllBonuses,
           totalAllAdvances,
           totalAllDeductions,
+          leaveDeduction,
           netTotalEarnings
         };
       });
@@ -3320,6 +3321,12 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                       </span>
                       <span className="text-sm font-semibold text-purple-300">-{formatCurrency(staff.totalAllAdvances)}</span>
                     </button>
+                    {staff.leaveDeduction > 0 && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-white/60">หักขาด/ลา</span>
+                        <span className="text-sm font-semibold text-orange-300">-{formatCurrency(staff.leaveDeduction)}</span>
+                      </div>
+                    )}
                     {staff.totalAllDeductions > 0 && (
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-white/60">หักสาย/ขาด</span>
