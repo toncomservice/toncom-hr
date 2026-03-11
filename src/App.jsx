@@ -4241,7 +4241,18 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-emerald-500/30 rounded-xl p-3 text-center">
             <CheckCircle className="w-6 h-6 text-emerald-300 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-emerald-300">{stats.attendance.workDays}</p>
+            <p className="text-2xl font-bold text-emerald-300">{
+              (() => {
+                if (viewMode === 'all') return stats.workingDaysFromStart;
+                if (viewMode === 'month') {
+                  const today = new Date();
+                  const [y, mo] = selectedMonth.split('-').map(Number);
+                  const isCurrentMonth = today.getFullYear() === y && today.getMonth() + 1 === mo;
+                  return isCurrentMonth ? today.getDate() : new Date(y, mo, 0).getDate();
+                }
+                return stats.attendance.workDays;
+              })()
+            }</p>
             <p className="text-xs text-white/50">วันทำงาน</p>
           </div>
           <div className="bg-blue-500/30 rounded-xl p-3 text-center">
