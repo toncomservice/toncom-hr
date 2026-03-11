@@ -2916,6 +2916,7 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
   const [bonusHistoryStaff, setBonusHistoryStaff] = useState(null);
   const [editingLevelId, setEditingLevelId] = useState(null);
   const [levelInput, setLevelInput] = useState('');
+  const [attendanceHistoryStaff, setAttendanceHistoryStaff] = useState(null);
 
   // คำนวณจำนวนวันทำงาน (รวมทุกวัน)
   const calculateWorkingDays = (startDate, endDate) => {
@@ -3145,6 +3146,13 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
                 )}
                 {staff.role === 'staff' && (
                   <>
+                    <button
+                      onClick={() => setAttendanceHistoryStaff(staff)}
+                      className="p-2 hover:bg-white/10 rounded-lg transition"
+                      title="ประวัติขาด/ลา"
+                    >
+                      <Calendar className="w-4 h-4 text-blue-300" />
+                    </button>
                     <button
                       onClick={() => setBonusHistoryStaff(staff)}
                       className="p-2 hover:bg-white/10 rounded-lg transition"
@@ -3392,6 +3400,145 @@ const OwnerStaff = ({ staffData, attendance, advances, bonuses, onAddAdvance, on
               <div className="border-t border-gray-100 px-4 py-3 flex justify-between items-center shrink-0">
                 <span className="text-sm font-semibold text-gray-600">รวมค่าแรงพิเศษทั้งหมด</span>
                 <span className="text-lg font-bold text-amber-600">+{formatCurrency(totalAllBonus)}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Modal ประวัติขาด/ลา */}
+      {attendanceHistoryStaff && (() => {
+        const staffUsername = attendanceHistoryStaff.username;
+        const staffAttendanceAll = attendance[staffUsername] || {};
+        const months = Object.keys(staffAttendanceAll).sort((a, b) => b.localeCompare(a));
+        const totalLate = months.reduce((s, m) => s + (staffAttendanceAll[m].lateDays || 0), 0);
+        const totalAbsent = months.reduce((s, m) => s + (staffAttendanceAll[m].absentDays || 0), 0);
+        const totalLeave = months.reduce((s, m) => s + (staffAttendanceAll[m].leaveDays || 0), 0);
+        const totalDeductions = (totalLate * 50) + (totalAbsent * 300);
+
+        return (
+          <div
+            className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center"
+            onClick={() => setAttendanceHistoryStaff(null)}
+          >
+            <div
+              className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md max-h-[85vh] flex flex-col shadow-2xl"
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="bg-gradient-to-r from-blue-500 to-indigo-600 rounded-t-2xl p-4 flex items-center justify-between shrink-0">
+                <div>
+                  <p className="text-xs text-white/80">ประวัติขาด/ลา/สาย</p>
+                  <h3 className="font-bold text-white text-lg">{attendanceHistoryStaff.name}</h3>
+                </div>
+                <button
+                  onClick={() => setAttendanceHistoryStaff(null)}
+                  className="p-2 hover:bg-white/20 rounded-lg transition"
+                >
+                  <X className="w-5 h-5 text-white" />
+                </button>
+              </div>
+
+              <div className="px-4 pt-4 pb-2 shrink-0">
+                <div className="grid grid-cols-4 gap-2">
+                  <div className="bg-yellow-50 rounded-xl p-2 text-center">
+                    <p className="text-lg font-bold text-yellow-600">{totalLate}</p>
+                    <p className="text-xs text-gray-500">สาย</p>
+                    <p className="text-xs text-yellow-600">-{formatCurrency(totalLate * 50)}</p>
+                  </div>
+                  <div className="bg-red-50 rounded-xl p-2 text-center">
+                    <p className="text-lg font-bold text-red-600">{totalAbsent}</p>
+                    <p className="text-xs text-gray-500">ขาด</p>
+                    <p className="text-xs text-red-600">-{formatCurrency(totalAbsent * 300)}</p>
+                  </div>
+                  <div className="bg-blue-50 rounded-xl p-2 text-center">
+                    <p className="text-lg font-bold text-blue-600">{totalLeave}</p>
+                    <p className="text-xs text-gray-500">ลา</p>
+                    <p className="text-xs text-blue-500">หักวันทำงาน</p>
+                  </div>
+                  <div className="bg-orange-50 rounded-xl p-2 text-center">
+                    <p className="text-sm font-bold text-orange-600">{formatCurrency(totalDeductions)}</p>
+                    <p className="text-xs text-gray-500">หักรวม</p>
+                    <p className="text-xs text-gray-400">ค่าปรับ</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-y-auto flex-1 px-4 pb-4">
+                {months.length === 0 ? (
+                  <div className="text-center py-10 text-gray-400">
+                    <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">ยังไม่มีบันทึกการเข้างาน</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 mt-2">
+                    {months.map(month => {
+                      const att = staffAttendanceAll[month];
+                      const deduction = ((att.lateDays || 0) * 50) + ((att.absentDays || 0) * 300);
+                      const isCurrentMonth = month === getCurrentMonth();
+                      return (
+                        <div key={month} className={`rounded-xl border p-3 ${isCurrentMonth ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-100'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`text-sm font-semibold ${isCurrentMonth ? 'text-blue-700' : 'text-gray-700'}`}>
+                              {month} {isCurrentMonth && <span className="text-xs font-normal text-blue-500">(เดือนนี้)</span>}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setAttendanceHistoryStaff(null);
+                                onEditAttendance(attendanceHistoryStaff, month);
+                              }}
+                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 py-1 rounded-lg transition"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              แก้ไข
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-4 gap-1.5 text-xs">
+                            <div className="bg-emerald-100 rounded-lg p-1.5 text-center">
+                              <p className="font-bold text-emerald-700">{att.workDays || 0}</p>
+                              <p className="text-gray-500">วันทำงาน</p>
+                            </div>
+                            <div className="bg-yellow-100 rounded-lg p-1.5 text-center">
+                              <p className="font-bold text-yellow-700">{att.lateDays || 0}</p>
+                              <p className="text-gray-500">สาย</p>
+                            </div>
+                            <div className="bg-red-100 rounded-lg p-1.5 text-center">
+                              <p className="font-bold text-red-700">{att.absentDays || 0}</p>
+                              <p className="text-gray-500">ขาด</p>
+                            </div>
+                            <div className="bg-blue-100 rounded-lg p-1.5 text-center">
+                              <p className="font-bold text-blue-700">{att.leaveDays || 0}</p>
+                              <p className="text-gray-500">ลา</p>
+                            </div>
+                          </div>
+                          {deduction > 0 && (
+                            <div className="mt-2 flex justify-between items-center text-xs border-t border-gray-200 pt-1.5">
+                              <span className="text-gray-500">
+                                หัก: {att.lateDays > 0 ? `สาย ${att.lateDays}×50฿` : ''}{att.lateDays > 0 && att.absentDays > 0 ? ' + ' : ''}{att.absentDays > 0 ? `ขาด ${att.absentDays}×300฿` : ''}
+                              </span>
+                              <span className="font-semibold text-red-600">-{formatCurrency(deduction)}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between shrink-0">
+                <button
+                  onClick={() => {
+                    setAttendanceHistoryStaff(null);
+                    onEditAttendance(attendanceHistoryStaff);
+                  }}
+                  className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                >
+                  <Plus className="w-4 h-4" />
+                  เพิ่ม/แก้ไขเดือนใหม่
+                </button>
+                <span className="text-sm font-semibold text-red-600">
+                  หักรวม: -{formatCurrency(totalDeductions)}
+                </span>
               </div>
             </div>
           </div>
@@ -4737,12 +4884,12 @@ const AppContent = () => {
                 onAddAdvance={() => setShowAdvanceModal(true)}
                 onAddBonus={() => setShowBonusModal(true)}
                 onAddAttendance={() => setShowAbsenceModal(true)}
-                onEditAttendance={(staff) => {
-                  const currentMonth = getCurrentMonth();
-                  const monthAttendance = attendance[staff.username]?.[currentMonth] || {};
+                onEditAttendance={(staff, month) => {
+                  const targetMonth = month || getCurrentMonth();
+                  const monthAttendance = attendance[staff.username]?.[targetMonth] || {};
                   setEditingAttendance({
                     staffId: staff.username,
-                    month: currentMonth,
+                    month: targetMonth,
                     workDays: monthAttendance.workDays || 0,
                     lateDays: monthAttendance.lateDays || 0,
                     absentDays: monthAttendance.absentDays || 0,
