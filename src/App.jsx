@@ -4230,8 +4230,11 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
             <p className="text-2xl font-bold text-emerald-300">{
               (() => {
                 if (viewMode === 'all') {
-                  const totalAbsent = (absences || []).filter(a => a.staffId === username).length;
-                  return Math.max(0, stats.workingDaysFromStart - totalAbsent);
+                  const staffAbsAll = (absences || []).filter(a => a.staffId === username);
+                  const totalAbsentLeave = staffAbsAll.length > 0
+                    ? staffAbsAll.length
+                    : (stats.attendance.absentDays || 0) + (stats.attendance.leaveDays || 0);
+                  return Math.max(0, stats.workingDaysFromStart - totalAbsentLeave);
                 }
                 if (viewMode === 'month') {
                   const today = new Date();
