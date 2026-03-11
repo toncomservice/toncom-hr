@@ -2974,20 +2974,48 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
         const staffAttendance = attendance[staff.username] || {};
         const allStaffBonuses = (bonuses || []).filter(b => b.staffId === staff.username);
         const totalAllBonuses = allStaffBonuses.reduce((sum, b) => sum + b.amount, 0);
-        const totalWageEarnings = calculateEarningsFromAttendance(wageHistory, staffAttendance)
-          ?? calculateEarningsWithHistory(wageHistory, startDate, today);
+
+        // absences records รายวัน (จาก table ใหม่)
+        const staffAbsences = (absences || []).filter(a => a.staffId === staff.username);
+
+        // ตรวจว่ามีข้อมูล workDays จริงหรือเปล่า
+        const hasWorkDaysData = Object.values(staffAttendance).some(m => (m.workDays || 0) > 0);
+        const calendarBaseWage = calculateEarningsWithHistory(wageHistory, startDate, today);
+
+        let totalWageEarnings;
+        if (hasWorkDaysData) {
+          // ใช้ attendance aggregate (admin ตั้งวันทำงานแต่ละเดือน)
+          totalWageEarnings = calculateEarningsFromAttendance(wageHistory, staffAttendance) ?? calendarBaseWage;
+        } else if (staffAbsences.length > 0) {
+          // ใช้ absences table: หักค่าแรงแต่ละวันลา/ขาด
+          const absWageDeduction = staffAbsences.reduce((sum, a) => sum + getWageAtDate(wageHistory, a.date), 0);
+          totalWageEarnings = calendarBaseWage - absWageDeduction;
+        } else {
+          // fallback: หักจาก attendance aggregate (leave_days / absent_days × ค่าแรงของเดือนนั้น)
+          const aggDeduction = Object.entries(staffAttendance).reduce((total, [month, data]) => {
+            const count = (data.absentDays || 0) + (data.leaveDays || 0);
+            if (!count) return total;
+            const [y, mo] = month.split('-').map(Number);
+            const monthEnd = new Date(y, mo, 0).toISOString().split('T')[0];
+            return total + count * getWageAtDate(wageHistory, monthEnd);
+          }, 0);
+          totalWageEarnings = calendarBaseWage - aggDeduction;
+        }
         const totalEarnings = totalWageEarnings + totalAllBonuses;
 
-        // คำนวณเงินเบิกทั้งหมด (ทุกเดือน) จาก Sheet
+        // คำนวณเงินเบิกทั้งหมด (ทุกเดือน)
         const allTimeAdvances = advances.filter(a => a.staffId === staff.username);
         const totalAllAdvances = allTimeAdvances.reduce((sum, a) => sum + a.amount, 0);
 
-        // คำนวณหักสาย/ขาด ทุกเดือนจาก attendance Sheet
-        const totalAllDeductions = Object.values(staffAttendance).reduce((sum, m) => {
-          return sum + ((m.lateDays || 0) * LATE_PENALTY) + ((m.absentDays || 0) * ABSENT_PENALTY);
-        }, 0);
+        // ค่าปรับสาย (จาก attendance aggregate เสมอ)
+        const latePenalties = Object.values(staffAttendance).reduce((sum, m) => sum + (m.lateDays || 0) * LATE_PENALTY, 0);
+        // ค่าปรับขาด: ใช้ absences table ถ้ามี ไม่งั้นใช้ aggregate
+        const absentPenalties = staffAbsences.length > 0
+          ? staffAbsences.filter(a => a.type === 'absent').length * ABSENT_PENALTY
+          : Object.values(staffAttendance).reduce((sum, m) => sum + (m.absentDays || 0) * ABSENT_PENALTY, 0);
+        const totalAllDeductions = latePenalties + absentPenalties;
 
-        // รายได้สุทธิตั้งแต่เริ่มงาน = รายได้รวม - เบิกทั้งหมด - หักสาย/ขาดทั้งหมด
+        // รายได้สุทธิตั้งแต่เริ่มงาน
         const netTotalEarnings = totalEarnings - totalAllAdvances - totalAllDeductions;
 
         return {
@@ -3011,7 +3039,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
           netTotalEarnings
         };
       });
-  }, [staffData, attendance, advances, bonuses, currentMonth]);
+  }, [staffData, attendance, advances, bonuses, absences, currentMonth]);
 
   // คำนวณค่าใช้จ่ายพนักงานรายวันรวม (สำหรับใช้คำนวณต้นทุน)
   const dailyStaffExpense = useMemo(() => {
@@ -3433,10 +3461,31 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
           .sort((a, b) => b.date.localeCompare(a.date));
         const staffStat = allStaffStats.find(s => s.username === staffUsername);
         const wageHistory = staffStat?.wageHistory || [];
-        const totalAbsent = staffAbsences.filter(a => a.type === 'absent').length;
-        const totalLeave = staffAbsences.filter(a => a.type === 'leave').length;
-        const totalDeduction = staffAbsences.reduce((sum, a) => {
-          const wage = getWageAtDate(wageHistory, a.date);
+
+        // fallback: สร้าง "legacy records" จาก attendance aggregate เมื่อไม่มีใน absences table
+        const staffAttendanceAll = attendance[staffUsername] || {};
+        const legacyItems = staffAbsences.length === 0
+          ? Object.entries(staffAttendanceAll)
+              .filter(([, data]) => (data.absentDays || 0) + (data.leaveDays || 0) > 0)
+              .sort(([a], [b]) => b.localeCompare(a))
+              .flatMap(([month, data]) => {
+                const [y, mo] = month.split('-').map(Number);
+                const monthEnd = new Date(y, mo, 0).toISOString().split('T')[0];
+                const wage = getWageAtDate(wageHistory, monthEnd);
+                const items = [];
+                for (let i = 0; i < (data.absentDays || 0); i++)
+                  items.push({ id: `leg-absent-${month}-${i}`, type: 'absent', month, wage, isLegacy: true });
+                for (let i = 0; i < (data.leaveDays || 0); i++)
+                  items.push({ id: `leg-leave-${month}-${i}`, type: 'leave', month, wage, isLegacy: true });
+                return items;
+              })
+          : [];
+
+        const displayItems = staffAbsences.length > 0 ? staffAbsences : legacyItems;
+        const totalAbsent = displayItems.filter(a => a.type === 'absent').length;
+        const totalLeave = displayItems.filter(a => a.type === 'leave').length;
+        const totalDeduction = displayItems.reduce((sum, a) => {
+          const wage = a.isLegacy ? a.wage : getWageAtDate(wageHistory, a.date);
           return sum + wage + (a.type === 'absent' ? ABSENT_PENALTY : 0);
         }, 0);
 
@@ -3477,7 +3526,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
               </div>
 
               <div className="overflow-y-auto flex-1 px-4 pb-4">
-                {staffAbsences.length === 0 ? (
+                {displayItems.length === 0 ? (
                   <div className="text-center py-10 text-gray-400">
                     <Calendar className="w-10 h-10 mx-auto mb-2 opacity-30" />
                     <p className="text-sm">ยังไม่มีประวัติขาด/ลา</p>
@@ -3485,8 +3534,15 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
                   </div>
                 ) : (
                   <div className="space-y-2 mt-2">
-                    {staffAbsences.map((abs) => {
-                      const wage = getWageAtDate(wageHistory, abs.date);
+                    {legacyItems.length > 0 && (
+                      <div className="flex items-center gap-2 py-1">
+                        <div className="flex-1 h-px bg-gray-200" />
+                        <span className="text-xs text-gray-400 shrink-0">ข้อมูลรายเดือน (ไม่ทราบวันที่)</span>
+                        <div className="flex-1 h-px bg-gray-200" />
+                      </div>
+                    )}
+                    {displayItems.map((abs) => {
+                      const wage = abs.isLegacy ? abs.wage : getWageAtDate(wageHistory, abs.date);
                       const deductAmt = wage + (abs.type === 'absent' ? ABSENT_PENALTY : 0);
                       const isAbsent = abs.type === 'absent';
                       return (
@@ -3496,7 +3552,10 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
                               <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isAbsent ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                                 {isAbsent ? 'ขาด' : 'ลา'}
                               </span>
-                              <span className="text-sm font-medium text-gray-800">{abs.date}</span>
+                              <span className="text-sm font-medium text-gray-800">
+                                {abs.isLegacy ? abs.month : abs.date}
+                              </span>
+                              {abs.isLegacy && <span className="text-xs text-gray-400">(บันทึกรวม)</span>}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {isAbsent
@@ -3506,13 +3565,15 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-2">
                             <span className="text-sm font-bold text-red-600">-{formatCurrency(deductAmt)}</span>
-                            <button
-                              onClick={() => onDeleteAbsence(abs)}
-                              className="p-1.5 hover:bg-red-100 rounded-lg transition"
-                              title="ลบรายการ"
-                            >
-                              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                            </button>
+                            {!abs.isLegacy && (
+                              <button
+                                onClick={() => onDeleteAbsence(abs)}
+                                className="p-1.5 hover:bg-red-100 rounded-lg transition"
+                                title="ลบรายการ"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
