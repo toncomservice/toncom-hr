@@ -1449,7 +1449,7 @@ const AttendanceModal = ({ isOpen, onClose, onSave, staffList, editingData }) =>
 };
 
 // Absence Log Modal (บันทึกขาด/ลา แบบง่าย)
-const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance }) => {
+const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance, initialStaffId = '' }) => {
   const today = new Date().toISOString().split('T')[0];
   const [staffId, setStaffId] = useState('');
   const [date, setDate] = useState(today);
@@ -1457,11 +1457,11 @@ const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance }) => 
 
   useEffect(() => {
     if (isOpen) {
-      setStaffId('');
+      setStaffId(initialStaffId || '');
       setDate(today);
       setType('');
     }
-  }, [isOpen]);
+  }, [isOpen, initialStaffId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -3637,9 +3637,8 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                                 {isAbsent ? 'ขาด' : 'ลา'}
                               </span>
                               <span className="text-sm font-medium text-gray-800">
-                                {abs.isLegacy ? `เดือน ${abs.month}` : abs.date}
+                                {abs.isLegacy ? `เดือน ${abs.month}` : formatDate(abs.date)}
                               </span>
-                              {abs.isLegacy && <span className="text-xs text-gray-400">• กดระบุวันที่</span>}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {isAbsent
@@ -3658,16 +3657,16 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                 )}
               </div>
 
-              <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between shrink-0">
+              <div className="border-t border-gray-100 px-4 py-3 flex items-center justify-between shrink-0 gap-2">
                 <button
                   onClick={() => {
                     setAttendanceHistoryStaff(null);
-                    onEditAttendance(attendanceHistoryStaff);
+                    onAddAttendance(staffUsername);
                   }}
-                  className="flex items-center gap-1.5 text-sm text-indigo-600 hover:text-indigo-800 font-medium"
+                  className="flex items-center gap-1.5 text-sm bg-purple-600 text-white px-3 py-2 rounded-lg hover:bg-purple-700 transition font-medium"
                 >
-                  <Edit3 className="w-4 h-4" />
-                  แก้ไขตัวเลขรายเดือน
+                  <Plus className="w-4 h-4" />
+                  บันทึกขาด/ลา
                 </button>
                 <span className="text-sm font-semibold text-red-600">
                   หักรวม: -{formatCurrency(totalDeduction)}
@@ -4620,6 +4619,7 @@ const AppContent = () => {
   const [showBonusModal, setShowBonusModal] = useState(false);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showAbsenceModal, setShowAbsenceModal] = useState(false);
+  const [absenceModalInitialStaff, setAbsenceModalInitialStaff] = useState('');
   const [editingAttendance, setEditingAttendance] = useState(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -5096,7 +5096,7 @@ const AppContent = () => {
                 bonuses={bonuses}
                 onAddAdvance={() => setShowAdvanceModal(true)}
                 onAddBonus={() => setShowBonusModal(true)}
-                onAddAttendance={() => setShowAbsenceModal(true)}
+                onAddAttendance={(staffId = '') => { setAbsenceModalInitialStaff(staffId); setShowAbsenceModal(true); }}
                 onEditAttendance={(staff, month) => {
                   const targetMonth = month || getCurrentMonth();
                   const monthAttendance = attendance[staff.username]?.[targetMonth] || {};
@@ -5250,10 +5250,11 @@ const AppContent = () => {
 
       <AbsenceLogModal
         isOpen={showAbsenceModal}
-        onClose={() => setShowAbsenceModal(false)}
+        onClose={() => { setShowAbsenceModal(false); setAbsenceModalInitialStaff(''); }}
         onSave={handleSaveAbsenceLog}
         staffList={staffList}
         attendance={attendance}
+        initialStaffId={absenceModalInitialStaff}
       />
 
       <WageEditModal
