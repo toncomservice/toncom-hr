@@ -3366,22 +3366,18 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                     แก้ไข
                   </button>
                 </div>
-                <div className="grid grid-cols-4 gap-2 text-xs">
+                <div className="grid grid-cols-3 gap-2 text-xs">
                   <div className="bg-emerald-500/30 rounded-lg p-2 text-center">
                     <p className="font-semibold text-emerald-300">{staff.attendance.workDays}</p>
                     <p className="text-white/50">วันทำงาน</p>
-                  </div>
-                  <div className="bg-yellow-500/30 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-yellow-300">{staff.attendance.lateDays}</p>
-                    <p className="text-white/50">สาย</p>
                   </div>
                   <div className="bg-red-500/30 rounded-lg p-2 text-center">
                     <p className="font-semibold text-red-300">{staff.attendance.absentDays}</p>
                     <p className="text-white/50">ขาด</p>
                   </div>
-                  <div className="bg-purple-500/30 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-purple-300">{formatCurrency(staff.totalAdvance)}</p>
-                    <p className="text-white/50">เบิกเดือนนี้</p>
+                  <div className="bg-blue-500/30 rounded-lg p-2 text-center">
+                    <p className="font-semibold text-blue-300">{staff.attendance.leaveDays}</p>
+                    <p className="text-white/50">ลา</p>
                   </div>
                 </div>
                 {staff.monthBonusList?.length > 0 && (
