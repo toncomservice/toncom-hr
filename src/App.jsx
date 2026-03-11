@@ -3368,7 +3368,14 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div className="bg-emerald-500/30 rounded-lg p-2 text-center">
-                    <p className="font-semibold text-emerald-300">{staff.attendance.workDays}</p>
+                    <p className="font-semibold text-emerald-300">{
+                      (() => {
+                        const today = new Date();
+                        const [y, mo] = currentMonth.split('-').map(Number);
+                        const isCurrentMonth = today.getFullYear() === y && today.getMonth() + 1 === mo;
+                        return isCurrentMonth ? today.getDate() : new Date(y, mo, 0).getDate();
+                      })()
+                    }</p>
                     <p className="text-white/50">วันทำงาน</p>
                   </div>
                   <div className="bg-red-500/30 rounded-lg p-2 text-center">
