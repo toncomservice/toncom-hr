@@ -458,6 +458,13 @@ export const insertAbsence = async (absence) => {
   if (error) throw error;
 };
 
+export const updateAbsenceById = async (id, fields) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('absences').update(fields).eq('id', id);
+  if (error) throw error;
+};
+
 export const deleteAbsenceById = async (id) => {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase not configured');

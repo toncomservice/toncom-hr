@@ -23,7 +23,7 @@ import {
   getAllAdvancesFromDB, insertAdvance, deleteAdvanceById,
   getAllBonusesFromDB, insertBonus,
   getAllWageHistory, upsertWageHistoryEntry, deleteWageHistoryEntry, updateWageHistoryDate,
-  getAllAbsencesFromDB, insertAbsence, deleteAbsenceById,
+  getAllAbsencesFromDB, insertAbsence, updateAbsenceById, deleteAbsenceById,
   updateProfileFields,
 } from './lib/supabase';
 
@@ -2923,8 +2923,85 @@ const WageEditModal = ({ isOpen, onClose, onSave, onUpdateHistoryDate, onDeleteH
   );
 };
 
+// Modal แก้ไข/ระบุวันที่ รายการขาด/ลา
+const AbsenceEditModal = ({ abs, wageHistory, isLegacy, onClose, onSave, onDelete }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const [date, setDate] = useState(isLegacy ? today : (abs.date || today));
+  const [type, setType] = useState(abs.type || 'leave');
+
+  const wage = getWageAtDate(wageHistory, date);
+  const deductAmt = wage + (type === 'absent' ? ABSENT_PENALTY : 0);
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-white w-full sm:max-w-sm rounded-t-2xl sm:rounded-2xl shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="p-4 border-b flex items-center justify-between">
+          <h3 className="font-bold text-gray-800">
+            {isLegacy ? 'ระบุวันที่รายการ' : 'แก้ไขรายการ'}
+          </h3>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5 text-gray-500" />
+          </button>
+        </div>
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">วันที่</label>
+            <input
+              type="date"
+              value={date}
+              onChange={e => setDate(e.target.value)}
+              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition text-gray-800"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">ประเภท</label>
+            <div className="grid grid-cols-2 gap-2">
+              {['leave', 'absent'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setType(t)}
+                  className={`py-3 rounded-xl font-medium text-sm transition ${type === t
+                    ? (t === 'absent' ? 'bg-red-500 text-white' : 'bg-blue-500 text-white')
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  {t === 'leave' ? 'ลา' : 'ขาด'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {date && (
+            <div className={`rounded-xl p-3 text-sm ${type === 'absent' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+              หัก {formatCurrency(wage)}
+              {type === 'absent' && ` + ค่าปรับ ${ABSENT_PENALTY}฿`}
+              {' '}= <span className="font-bold">{formatCurrency(deductAmt)}</span>
+            </div>
+          )}
+
+          <button
+            onClick={() => date && onSave(date, type)}
+            disabled={!date}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 disabled:opacity-40 transition"
+          >
+            {isLegacy ? 'ระบุวันที่และบันทึก' : 'บันทึกการเปลี่ยนแปลง'}
+          </button>
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="w-full py-3 bg-red-50 text-red-600 rounded-xl font-medium hover:bg-red-100 transition flex items-center justify-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" />
+              ลบรายการนี้
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Owner Staff Management
-const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
+const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onUpdateAbsence, onConvertLegacy, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
   const currentMonth = getCurrentMonth();
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -2936,6 +3013,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
   const [editingLevelId, setEditingLevelId] = useState(null);
   const [levelInput, setLevelInput] = useState('');
   const [attendanceHistoryStaff, setAttendanceHistoryStaff] = useState(null);
+  const [editingAbsenceItem, setEditingAbsenceItem] = useState(null); // { abs, wageHistory }
 
   // คำนวณจำนวนวันทำงาน (รวมทุกวัน)
   const calculateWorkingDays = (startDate, endDate) => {
@@ -3474,9 +3552,9 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
                 const wage = getWageAtDate(wageHistory, monthEnd);
                 const items = [];
                 for (let i = 0; i < (data.absentDays || 0); i++)
-                  items.push({ id: `leg-absent-${month}-${i}`, type: 'absent', month, wage, isLegacy: true });
+                  items.push({ id: `leg-absent-${month}-${i}`, type: 'absent', month, wage, isLegacy: true, staffId: staffUsername });
                 for (let i = 0; i < (data.leaveDays || 0); i++)
-                  items.push({ id: `leg-leave-${month}-${i}`, type: 'leave', month, wage, isLegacy: true });
+                  items.push({ id: `leg-leave-${month}-${i}`, type: 'leave', month, wage, isLegacy: true, staffId: staffUsername });
                 return items;
               })
           : [];
@@ -3546,36 +3624,32 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
                       const deductAmt = wage + (abs.type === 'absent' ? ABSENT_PENALTY : 0);
                       const isAbsent = abs.type === 'absent';
                       return (
-                        <div key={abs.id} className={`flex items-center justify-between p-3 rounded-xl border ${isAbsent ? 'bg-red-50 border-red-100' : 'bg-blue-50 border-blue-100'}`}>
+                        <button
+                          key={abs.id}
+                          onClick={() => setEditingAbsenceItem({ abs, wageHistory })}
+                          className={`w-full flex items-center justify-between p-3 rounded-xl border text-left active:opacity-70 transition-opacity ${isAbsent ? 'bg-red-50 border-red-100' : 'bg-blue-50 border-blue-100'}`}
+                        >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
-                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${isAbsent ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                              <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${isAbsent ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
                                 {isAbsent ? 'ขาด' : 'ลา'}
                               </span>
                               <span className="text-sm font-medium text-gray-800">
-                                {abs.isLegacy ? abs.month : abs.date}
+                                {abs.isLegacy ? `เดือน ${abs.month}` : abs.date}
                               </span>
-                              {abs.isLegacy && <span className="text-xs text-gray-400">(บันทึกรวม)</span>}
+                              {abs.isLegacy && <span className="text-xs text-gray-400">• กดระบุวันที่</span>}
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {isAbsent
-                                ? `ค่าแรง ${formatCurrency(wage)} + ค่าปรับ ${ABSENT_PENALTY}฿`
-                                : `ค่าแรง ${formatCurrency(wage)}`}
+                                ? `หัก ${formatCurrency(wage)} + ค่าปรับ ${ABSENT_PENALTY}฿`
+                                : `หัก ${formatCurrency(wage)}`}
                             </p>
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-2">
                             <span className="text-sm font-bold text-red-600">-{formatCurrency(deductAmt)}</span>
-                            {!abs.isLegacy && (
-                              <button
-                                onClick={() => onDeleteAbsence(abs)}
-                                className="p-1.5 hover:bg-red-100 rounded-lg transition"
-                                title="ลบรายการ"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                              </button>
-                            )}
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
                           </div>
-                        </div>
+                        </button>
                       );
                     })}
                   </div>
@@ -3599,6 +3673,34 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, adv
               </div>
             </div>
           </div>
+        );
+      })()}
+
+      {/* Modal แก้ไขรายการขาด/ลา */}
+      {editingAbsenceItem && (() => {
+        const { abs, wageHistory: wh } = editingAbsenceItem;
+        const isLegacy = abs.isLegacy;
+        const today = new Date().toISOString().split('T')[0];
+        return (
+          <AbsenceEditModal
+            key={abs.id}
+            abs={abs}
+            wageHistory={wh}
+            isLegacy={isLegacy}
+            onClose={() => setEditingAbsenceItem(null)}
+            onSave={(newDate, newType) => {
+              if (isLegacy) {
+                onConvertLegacy(abs.staffId || attendanceHistoryStaff?.username, abs.month, abs.type, newDate, newType);
+              } else {
+                onUpdateAbsence(abs.id, newDate, newType);
+              }
+              setEditingAbsenceItem(null);
+            }}
+            onDelete={isLegacy ? null : () => {
+              onDeleteAbsence(abs);
+              setEditingAbsenceItem(null);
+            }}
+          />
         );
       })()}
 
@@ -4755,6 +4857,27 @@ const AppContent = () => {
     try { await upsertAttendance(data); } catch (err) { console.error('handleSaveAttendance error:', err); }
   }, []);
 
+  const handleUpdateAbsence = useCallback(async (id, newDate, newType) => {
+    setAbsences(prev => prev.map(a => a.id === id ? { ...a, date: newDate, type: newType } : a));
+    try { await updateAbsenceById(id, { date: newDate, type: newType }); } catch (err) { console.error('updateAbsence error:', err); }
+  }, []);
+
+  const handleConvertLegacy = useCallback(async (staffId, month, oldType, newDate, newType) => {
+    const newAbsence = { id: `ABS${Date.now()}`, staffId, date: newDate, type: newType };
+    setAbsences(prev => [newAbsence, ...prev]);
+    setAttendance(prev => {
+      const existing = prev[staffId]?.[month] || { workDays: 0, lateDays: 0, absentDays: 0, leaveDays: 0 };
+      const updated = {
+        ...existing,
+        absentDays: oldType === 'absent' ? Math.max(0, (existing.absentDays || 0) - 1) : existing.absentDays,
+        leaveDays: oldType === 'leave' ? Math.max(0, (existing.leaveDays || 0) - 1) : existing.leaveDays,
+      };
+      upsertAttendance({ staffId, month, ...updated }).catch(err => console.error(err));
+      return { ...prev, [staffId]: { ...prev[staffId], [month]: updated } };
+    });
+    try { await insertAbsence(newAbsence); } catch (err) { console.error('insertAbsence error:', err); }
+  }, []);
+
   const handleSaveAbsenceLog = useCallback(async (attendanceData, absenceRecord) => {
     // อัปเดต attendance aggregate
     await handleSaveAttendance(attendanceData);
@@ -4992,6 +5115,8 @@ const AppContent = () => {
                 }}
                 absences={absences}
                 onDeleteAbsence={handleDeleteAbsence}
+                onUpdateAbsence={handleUpdateAbsence}
+                onConvertLegacy={handleConvertLegacy}
                 positions={staffPositions}
                 onSavePosition={handleSavePosition}
                 onSaveLevel={handleSaveLevel}
