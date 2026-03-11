@@ -4411,36 +4411,54 @@ const StaffAdvancesHistory = ({ user, advances }) => {
   const userAdvances = advances.filter(a => a.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
   const totalAdvances = userAdvances.reduce((sum, a) => sum + a.amount, 0);
 
+  const byMonth = userAdvances.reduce((acc, a) => {
+    const m = a.month || a.date?.substring(0, 7) || 'ไม่ระบุ';
+    if (!acc[m]) acc[m] = [];
+    acc[m].push(a);
+    return acc;
+  }, {});
+  const months = Object.keys(byMonth).sort().reverse();
+
   return (
     <div className="space-y-4">
       <h2 className="text-lg font-bold text-gray-800">ประวัติเบิกเงิน</h2>
 
       {/* Summary */}
-      <div className="bg-gradient-to-br from-purple-500 to-violet-700 rounded-xl p-4 shadow-md">
-        <p className="text-sm text-white/60">เบิกไปแล้วทั้งหมด</p>
-        <p className="text-2xl font-bold text-white">{formatCurrency(totalAdvances)}</p>
+      <div className="bg-gradient-to-br from-purple-500 to-violet-600 rounded-2xl p-5 shadow-lg">
+        <p className="text-sm text-white/80 font-medium">เบิกไปแล้วทั้งหมด</p>
+        <p className="text-3xl font-black text-white mt-1">{formatCurrency(totalAdvances)}</p>
+        <p className="text-xs text-white/70 mt-1">{userAdvances.length} รายการ</p>
       </div>
 
-      {/* Advances List */}
+      {/* Advances List by Month */}
       {userAdvances.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-400">
           <CreditCard className="w-12 h-12 mx-auto mb-2 opacity-50" />
           <p>ยังไม่มีประวัติการเบิกเงิน</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          {userAdvances.map((adv, index) => (
-            <div
-              key={adv.id}
-              className={`p-4 flex items-center justify-between ${index !== userAdvances.length - 1 ? 'border-b border-gray-100' : ''}`}
-            >
-              <div>
-                <p className="font-medium text-gray-800">{adv.description || 'เบิกเงิน'}</p>
-                <p className="text-xs text-gray-500">{formatDate(adv.date)} - เดือน {adv.month}</p>
+        <div className="space-y-3">
+          {months.map(month => {
+            const items = byMonth[month];
+            const monthTotal = items.reduce((sum, a) => sum + a.amount, 0);
+            return (
+              <div key={month} className="bg-white rounded-2xl shadow-sm overflow-hidden border border-purple-100">
+                <div className="px-4 py-3 flex justify-between items-center bg-gradient-to-r from-purple-500 to-violet-600">
+                  <span className="font-bold text-white text-sm">{month}</span>
+                  <span className="font-bold text-white">{formatCurrency(monthTotal)}</span>
+                </div>
+                {items.map((adv, i) => (
+                  <div key={adv.id} className={`px-4 py-3 flex items-start justify-between ${i !== items.length - 1 ? 'border-b border-purple-50' : ''}`}>
+                    <div className="flex-1 min-w-0 mr-3">
+                      <p className="font-semibold text-gray-800 text-sm">{adv.description || 'เบิกเงิน'}</p>
+                      <p className="text-xs text-gray-400 mt-0.5">{formatDate(adv.date)}</p>
+                    </div>
+                    <span className="font-bold text-purple-600 whitespace-nowrap">-{formatCurrency(adv.amount)}</span>
+                  </div>
+                ))}
               </div>
-              <span className="text-red-500 font-semibold">-{formatCurrency(adv.amount)}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
