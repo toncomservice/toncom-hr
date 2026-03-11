@@ -3848,7 +3848,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
 };
 
 // Staff Dashboard
-const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positions = {}, onRefresh, isLoading, dataLoaded }) => {
+const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absences = [], positions = {}, onRefresh, isLoading, dataLoaded }) => {
   const currentMonth = getCurrentMonth();
   const [viewMode, setViewMode] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -4004,14 +4004,26 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
     const allTimeAdvances = advances.filter(a => a.staffId === username);
     const totalAllAdvances = allTimeAdvances.reduce((sum, a) => sum + a.amount, 0);
     const staffAttendanceAll = attendance[username] || {};
-    const totalAllDeductions = Object.values(staffAttendanceAll).reduce((sum, m) => {
-      return sum + ((m.lateDays || 0) * LATE_PENALTY) + ((m.absentDays || 0) * ABSENT_PENALTY);
-    }, 0);
+    const latePenalties = Object.values(staffAttendanceAll).reduce((sum, m) => sum + (m.lateDays || 0) * LATE_PENALTY, 0);
+    const staffAbsencesAll = (absences || []).filter(a => a.staffId === username);
+    const absentPenalties = staffAbsencesAll.length > 0
+      ? staffAbsencesAll.filter(a => a.type === 'absent').length * ABSENT_PENALTY
+      : Object.values(staffAttendanceAll).reduce((sum, m) => sum + (m.absentDays || 0) * ABSENT_PENALTY, 0);
+    const totalAllDeductions = latePenalties + absentPenalties;
     const totalAllBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
     const todayStr = new Date().toISOString().split('T')[0];
-    // totalWageEarnings = เฉพาะค่าแรงตาม wageHistory (ใช้วันทำงานจริง)
-    const totalWageEarnings = calculateEarningsFromAttendance(wageHistory, userAttendance)
-      ?? calculateEarningsWithHistory(wageHistory, startDate, todayStr);
+    // calendar-based เสมอ หักวันขาด/ลา
+    const calendarBase = calculateEarningsWithHistory(wageHistory, startDate, todayStr);
+    const leaveDeduction = staffAbsencesAll.length > 0
+      ? staffAbsencesAll.reduce((sum, a) => sum + getWageAtDate(wageHistory, a.date), 0)
+      : Object.entries(staffAttendanceAll).reduce((total, [month, data]) => {
+          const count = (data.absentDays || 0) + (data.leaveDays || 0);
+          if (!count) return total;
+          const [y, mo] = month.split('-').map(Number);
+          const monthEnd = new Date(y, mo, 0).toISOString().split('T')[0];
+          return total + count * getWageAtDate(wageHistory, monthEnd);
+        }, 0);
+    const totalWageEarnings = calendarBase - leaveDeduction;
     // totalEarnings = ค่าแรง + เงินพิเศษสะสมทั้งหมด
     const totalEarnings = totalWageEarnings + totalAllBonuses;
     const netTotalEarnings = totalEarnings - totalAllAdvances - totalAllDeductions;
@@ -4038,7 +4050,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, positi
       totalAllDeductions,
       netTotalEarnings
     };
-  }, [user, attendance, advances, bonuses, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo, currentMonth]);
+  }, [user, attendance, advances, bonuses, absences, staffData, viewMode, selectedMonth, customRange, weekRange, username, staffInfo, currentMonth]);
 
   const displayName = staffInfo?.name || user.profile?.name || user.name || user.email?.split('@')[0] || 'พนักงาน';
 
@@ -5145,6 +5157,7 @@ const AppContent = () => {
                 attendance={attendance}
                 advances={advances}
                 bonuses={bonuses}
+                absences={absences}
                 staffData={staffData}
                 positions={staffPositions}
                 onRefresh={handleFetchData}
