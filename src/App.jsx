@@ -1698,7 +1698,7 @@ const RevenueChart = ({ transactions, projects }) => {
 };
 
 // Owner Dashboard
-const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances, bonuses }) => {
+const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances, bonuses, absences = [] }) => {
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState('all'); // custom, week, month, all
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -1824,17 +1824,28 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
     const totalStaffCost = staffWageBreakdown.reduce((sum, s) => sum + s.wageCost, 0);
 
-    // ค่าแรงสะสมจริงถึงวันนี้ (ทุกคน) — ใช้ attendance ถ้ามี ไม่งั้นคำนวณจากวันเริ่มงาน
+    // ค่าแรงสะสมจริงถึงวันนี้ (ทุกคน) — calendar-based เสมอ หักขาด/ลา
     const today = new Date().toISOString().split('T')[0];
     const staffWagesAccumulated = (staffData || [])
       .filter(s => s.active !== false && s.role !== 'owner')
       .map(staff => {
+        const startDate = staff.startDate || staff.start_date;
         const wageHistory = staff.wageHistory && staff.wageHistory.length > 0
           ? staff.wageHistory
-          : [{ dailyWage: staff.daily_wage || staff.dailyWage || 0, effectiveDate: staff.startDate || staff.start_date || today }];
+          : [{ dailyWage: staff.daily_wage || staff.dailyWage || 0, effectiveDate: startDate || today }];
         const staffAttendance = attendance?.[staff.username] || {};
-        const earned = calculateEarningsFromAttendance(wageHistory, staffAttendance)
-          ?? calculateEarningsWithHistory(wageHistory, staff.startDate || staff.start_date, today);
+        const staffAbsences = (absences || []).filter(a => a.staffId === staff.username);
+        const calendarBase = calculateEarningsWithHistory(wageHistory, startDate, today);
+        const leaveDeduction = staffAbsences.length > 0
+          ? staffAbsences.reduce((sum, a) => sum + getWageAtDate(wageHistory, a.date), 0)
+          : Object.entries(staffAttendance).reduce((total, [month, data]) => {
+              const count = (data.absentDays || 0) + (data.leaveDays || 0);
+              if (!count) return total;
+              const [y, mo] = month.split('-').map(Number);
+              const monthEnd = new Date(y, mo, 0).toISOString().split('T')[0];
+              return total + count * getWageAtDate(wageHistory, monthEnd);
+            }, 0);
+        const earned = calendarBase - leaveDeduction;
         const staffBonuses = (bonuses || []).filter(b => b.staffId === staff.username).reduce((s, b) => s + b.amount, 0);
         const totalEarned = (earned || 0) + staffBonuses;
         const staffAdvances = advances.filter(a => a.staffId === staff.username).reduce((s, a) => s + a.amount, 0);
@@ -1880,7 +1891,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const emergencyFund = totalProjectProfit * 0.20;
 
     return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, entertainmentItems, emergencyFund, totalProjectProfit };
-  }, [transactions, projects, staffData, attendance, advances, bonuses, inRange, monthsInRange, viewMode, dateRange]);
+  }, [transactions, projects, staffData, attendance, advances, bonuses, absences, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
   const filteredTransactions = useMemo(() => {
@@ -5055,7 +5066,7 @@ const AppContent = () => {
         {isOwner ? (
           <>
             {currentPage === 'dashboard' && (
-              <OwnerDashboard transactions={transactions} projects={projects} staffData={staffData} attendance={attendance} advances={advances} bonuses={bonuses} />
+              <OwnerDashboard transactions={transactions} projects={projects} staffData={staffData} attendance={attendance} advances={advances} bonuses={bonuses} absences={absences} />
             )}
             {currentPage === 'transactions' && (
               <OwnerTransactions
