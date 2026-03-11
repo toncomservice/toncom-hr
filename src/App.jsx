@@ -3361,7 +3361,10 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                         const today = new Date();
                         const [y, mo] = currentMonth.split('-').map(Number);
                         const isCurrentMonth = today.getFullYear() === y && today.getMonth() + 1 === mo;
-                        return isCurrentMonth ? today.getDate() : new Date(y, mo, 0).getDate();
+                        const total = isCurrentMonth ? today.getDate() : new Date(y, mo, 0).getDate();
+                        const absent = staff.attendance.absentDays || 0;
+                        const leave = staff.attendance.leaveDays || 0;
+                        return Math.max(0, total - absent - leave);
                       })()
                     }</p>
                     <p className="text-white/50">วันทำงาน</p>
@@ -4226,12 +4229,18 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
             <CheckCircle className="w-6 h-6 text-emerald-300 mx-auto mb-1" />
             <p className="text-2xl font-bold text-emerald-300">{
               (() => {
-                if (viewMode === 'all') return stats.workingDaysFromStart;
+                if (viewMode === 'all') {
+                  const totalAbsent = (absences || []).filter(a => a.staffId === username).length;
+                  return Math.max(0, stats.workingDaysFromStart - totalAbsent);
+                }
                 if (viewMode === 'month') {
                   const today = new Date();
                   const [y, mo] = selectedMonth.split('-').map(Number);
                   const isCurrentMonth = today.getFullYear() === y && today.getMonth() + 1 === mo;
-                  return isCurrentMonth ? today.getDate() : new Date(y, mo, 0).getDate();
+                  const total = isCurrentMonth ? today.getDate() : new Date(y, mo, 0).getDate();
+                  const absent = stats.attendance.absentDays || 0;
+                  const leave = stats.attendance.leaveDays || 0;
+                  return Math.max(0, total - absent - leave);
                 }
                 return stats.attendance.workDays;
               })()
@@ -4326,7 +4335,9 @@ const StaffAttendanceHistory = ({ user, attendance, absences = [], staffData }) 
             const monthEndStr = new Date(y, mo, 0).toISOString().split('T')[0];
             const todayObj = new Date();
             const isCurrentMonth = todayObj.getFullYear() === y && todayObj.getMonth() + 1 === mo;
-            const autoWorkDays = isCurrentMonth ? todayObj.getDate() : new Date(y, mo, 0).getDate();
+            const totalDays = isCurrentMonth ? todayObj.getDate() : new Date(y, mo, 0).getDate();
+            const absentCount = (data.absentDays || 0) + (data.leaveDays || 0);
+            const autoWorkDays = Math.max(0, totalDays - absentCount);
             return (
               <div key={month} className="bg-gradient-to-br from-slate-600 to-slate-800 rounded-xl p-4 shadow-md">
                 <h3 className="font-semibold text-white mb-3">{month}</h3>
