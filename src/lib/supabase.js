@@ -370,6 +370,17 @@ export const deleteAdvanceById = async (id) => {
   if (error) throw error;
 };
 
+export const updateAdvanceById = async (id, fields) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('advances').update({
+    amount: parseFloat(fields.amount) || 0,
+    date: fields.date, month: fields.month,
+    description: fields.description || '',
+  }).eq('id', id);
+  if (error) throw error;
+};
+
 // ==================== BONUSES ====================
 export const getAllBonusesFromDB = async () => {
   const supabase = getSupabase();
@@ -392,6 +403,24 @@ export const insertBonus = async (bonus) => {
     date: bonus.date, month: bonus.month,
     description: bonus.description || '',
   });
+  if (error) throw error;
+};
+
+export const updateBonusById = async (id, fields) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('bonuses').update({
+    amount: parseFloat(fields.amount) || 0,
+    date: fields.date, month: fields.month,
+    description: fields.description || '',
+  }).eq('id', id);
+  if (error) throw error;
+};
+
+export const deleteBonusById = async (id) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('bonuses').delete().eq('id', id);
   if (error) throw error;
 };
 

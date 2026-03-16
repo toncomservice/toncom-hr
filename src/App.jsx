@@ -20,8 +20,8 @@ import {
   getAllTransactions, upsertTransaction, deleteTransactionById,
   getAllProjectsFromDB, upsertProject,
   getAllAttendanceFromDB, upsertAttendance,
-  getAllAdvancesFromDB, insertAdvance, deleteAdvanceById,
-  getAllBonusesFromDB, insertBonus,
+  getAllAdvancesFromDB, insertAdvance, deleteAdvanceById, updateAdvanceById,
+  getAllBonusesFromDB, insertBonus, updateBonusById, deleteBonusById,
   getAllWageHistory, upsertWageHistoryEntry, deleteWageHistoryEntry, updateWageHistoryDate,
   getAllAbsencesFromDB, insertAbsence, updateAbsenceById, deleteAbsenceById,
   updateProfileFields,
@@ -1097,26 +1097,37 @@ const SettingsModal = ({
 };
 
 // Advance Payment Modal (Owner adds for staff)
-const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
+const AdvanceModal = ({ isOpen, onClose, onSave, staffList, editingAdvance }) => {
   const [staffId, setStaffId] = useState('');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
+  useEffect(() => {
+    if (editingAdvance) {
+      setStaffId(editingAdvance.staffId || '');
+      setAmount(String(editingAdvance.amount || ''));
+      setDescription(editingAdvance.description || '');
+      setDate(editingAdvance.date || new Date().toISOString().split('T')[0]);
+    } else {
+      setStaffId('');
+      setAmount('');
+      setDescription('');
+      setDate(new Date().toISOString().split('T')[0]);
+    }
+  }, [editingAdvance, isOpen]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     const month = date.substring(0, 7);
     onSave({
-      id: generateId('A'),
+      id: editingAdvance?.id || generateId('A'),
       staffId,
       amount: parseFloat(amount),
       description,
       date,
       month
     });
-    setStaffId('');
-    setAmount('');
-    setDescription('');
     onClose();
   };
 
@@ -1126,7 +1137,9 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
       <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl">
         <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-800">บันทึกการเบิกเงิน</h2>
+          <h2 className="text-lg font-bold text-gray-800">
+            {editingAdvance ? 'แก้ไขการเบิกเงิน' : 'บันทึกการเบิกเงิน'}
+          </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
             <X className="w-5 h-5" />
           </button>
@@ -1140,6 +1153,7 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
               onChange={(e) => setStaffId(e.target.value)}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
               required
+              disabled={!!editingAdvance}
             >
               <option value="">-- เลือกพนักงาน --</option>
               {staffList.map(s => (
@@ -1185,7 +1199,7 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList }) => {
             type="submit"
             className="w-full py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition"
           >
-            บันทึก
+            {editingAdvance ? 'บันทึกการแก้ไข' : 'บันทึก'}
           </button>
         </form>
       </div>
@@ -2989,7 +3003,7 @@ const AbsenceEditModal = ({ abs, wageHistory, isLegacy, onClose, onSave, onDelet
 };
 
 // Owner Staff Management
-const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onUpdateAbsence, onConvertLegacy, advances, bonuses, onAddAdvance, onAddBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
+const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onUpdateAbsence, onConvertLegacy, advances, bonuses, onAddAdvance, onAddBonus, onEditAdvance, onDeleteAdvance, onEditBonus, onDeleteBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
   const currentMonth = getCurrentMonth();
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -3498,12 +3512,28 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                           </div>
                           <div className="space-y-1.5">
                             {items.map((b, i) => (
-                              <div key={b.id || i} className="flex items-center justify-between bg-amber-50 rounded-xl px-3 py-2">
-                                <div>
+                              <div key={b.id || i} className="flex items-center justify-between bg-amber-50 rounded-xl px-3 py-2 gap-2">
+                                <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium text-gray-800">{b.description || 'เงินพิเศษ'}</p>
                                   <p className="text-xs text-gray-400">{formatDate(b.date)}</p>
                                 </div>
-                                <span className="font-bold text-amber-600">+{formatCurrency(b.amount)}</span>
+                                <span className="font-bold text-amber-600 shrink-0">+{formatCurrency(b.amount)}</span>
+                                <div className="flex gap-1 shrink-0">
+                                  <button
+                                    onClick={() => { setBonusHistoryStaff(null); onEditBonus(b); }}
+                                    className="p-1.5 hover:bg-amber-100 rounded-lg transition text-amber-600"
+                                    title="แก้ไข"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => onDeleteBonus(b.id)}
+                                    className="p-1.5 hover:bg-red-100 rounded-lg transition text-red-400"
+                                    title="ลบ"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -3778,12 +3808,28 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                           </div>
                           <div className="space-y-1.5">
                             {items.map((adv, i) => (
-                              <div key={adv.id || i} className="flex items-center justify-between bg-purple-50 rounded-xl px-3 py-2">
-                                <div>
+                              <div key={adv.id || i} className="flex items-center justify-between bg-purple-50 rounded-xl px-3 py-2 gap-2">
+                                <div className="flex-1 min-w-0">
                                   <p className="text-sm font-medium text-gray-800">{adv.description || 'เบิกเงิน'}</p>
                                   <p className="text-xs text-gray-400">{formatDate(adv.date)}</p>
                                 </div>
-                                <span className="font-bold text-purple-600">{formatCurrency(adv.amount)}</span>
+                                <span className="font-bold text-purple-600 shrink-0">{formatCurrency(adv.amount)}</span>
+                                <div className="flex gap-1 shrink-0">
+                                  <button
+                                    onClick={() => { setAdvanceHistoryStaff(null); onEditAdvance(adv); }}
+                                    className="p-1.5 hover:bg-indigo-100 rounded-lg transition text-indigo-500"
+                                    title="แก้ไข"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => onDeleteAdvance(adv.id)}
+                                    className="p-1.5 hover:bg-red-100 rounded-lg transition text-red-400"
+                                    title="ลบ"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -4673,6 +4719,8 @@ const AppContent = () => {
   const [editingProject, setEditingProject] = useState(null);
   const [showWageModal, setShowWageModal] = useState(false);
   const [editingWageStaff, setEditingWageStaff] = useState(null);
+  const [editingAdvance, setEditingAdvance] = useState(null);
+  const [editingBonus, setEditingBonus] = useState(null);
   const [filterProject, setFilterProject] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState('');
 
@@ -4857,9 +4905,15 @@ const AppContent = () => {
   }, [editingProject]);
 
   const handleSaveAdvance = useCallback(async (advance) => {
-    setAdvances(prev => [...prev, advance]);
-    try { await insertAdvance(advance); } catch (err) { console.error('handleSaveAdvance error:', err); }
-  }, []);
+    if (editingAdvance) {
+      setAdvances(prev => prev.map(a => a.id === advance.id ? advance : a));
+      setEditingAdvance(null);
+      try { await updateAdvanceById(advance.id, advance); } catch (err) { console.error('handleUpdateAdvance error:', err); }
+    } else {
+      setAdvances(prev => [...prev, advance]);
+      try { await insertAdvance(advance); } catch (err) { console.error('handleSaveAdvance error:', err); }
+    }
+  }, [editingAdvance]);
 
   const handleDeleteAdvance = useCallback(async (id) => {
     if (confirm('ต้องการลบรายการเบิกเงินนี้?')) {
@@ -4869,8 +4923,21 @@ const AppContent = () => {
   }, []);
 
   const handleSaveBonus = useCallback(async (bonus) => {
-    setBonuses(prev => [...prev, bonus]);
-    try { await insertBonus(bonus); } catch (err) { console.error('handleSaveBonus error:', err); }
+    if (editingBonus) {
+      setBonuses(prev => prev.map(b => b.id === bonus.id ? bonus : b));
+      setEditingBonus(null);
+      try { await updateBonusById(bonus.id, bonus); } catch (err) { console.error('handleUpdateBonus error:', err); }
+    } else {
+      setBonuses(prev => [...prev, bonus]);
+      try { await insertBonus(bonus); } catch (err) { console.error('handleSaveBonus error:', err); }
+    }
+  }, [editingBonus]);
+
+  const handleDeleteBonus = useCallback(async (id) => {
+    if (confirm('ต้องการลบรายการเงินพิเศษนี้?')) {
+      setBonuses(prev => prev.filter(b => b.id !== id));
+      try { await deleteBonusById(id); } catch (err) { console.error('handleDeleteBonus error:', err); }
+    }
   }, []);
 
   const handleSavePosition = useCallback(async (staffId, position) => {
@@ -5141,8 +5208,12 @@ const AppContent = () => {
                 attendance={attendance}
                 advances={advances}
                 bonuses={bonuses}
-                onAddAdvance={() => setShowAdvanceModal(true)}
-                onAddBonus={() => setShowBonusModal(true)}
+                onAddAdvance={() => { setEditingAdvance(null); setShowAdvanceModal(true); }}
+                onAddBonus={() => { setEditingBonus(null); setShowBonusModal(true); }}
+                onEditAdvance={(adv) => { setEditingAdvance(adv); setShowAdvanceModal(true); }}
+                onDeleteAdvance={handleDeleteAdvance}
+                onEditBonus={(b) => { setEditingBonus(b); setShowBonusModal(true); }}
+                onDeleteBonus={handleDeleteBonus}
                 onAddAttendance={(staffId = '') => { setAbsenceModalInitialStaff(staffId); setShowAbsenceModal(true); }}
                 onEditAttendance={(staff, month) => {
                   const targetMonth = month || getCurrentMonth();
@@ -5275,16 +5346,18 @@ const AppContent = () => {
 
       <AdvanceModal
         isOpen={showAdvanceModal}
-        onClose={() => setShowAdvanceModal(false)}
+        onClose={() => { setShowAdvanceModal(false); setEditingAdvance(null); }}
         onSave={handleSaveAdvance}
         staffList={staffList}
+        editingAdvance={editingAdvance}
       />
 
       <BonusModal
         isOpen={showBonusModal}
-        onClose={() => setShowBonusModal(false)}
+        onClose={() => { setShowBonusModal(false); setEditingBonus(null); }}
         onSave={handleSaveBonus}
         staffList={staffList}
+        editingBonus={editingBonus}
       />
 
       <AttendanceModal
