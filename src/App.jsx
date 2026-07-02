@@ -3148,7 +3148,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
         const netSalary = grossPay - monthDeductions - totalAdvance;
 
         // รายได้รวมตั้งแต่วันเริ่มงาน (คำนวณจาก wageHistory + เงินพิเศษสะสม)
-        const wageHistory = staff.wageHistory || [{ dailyWage, effectiveDate: startDate || '2025-01-01' }];
+        const wageHistory = (staff.wageHistory && staff.wageHistory.length > 0) ? staff.wageHistory : [{ dailyWage, effectiveDate: startDate || '2025-01-01' }];
         const staffAttendance = attendance[staff.username] || {};
         const allStaffBonuses = (bonuses || []).filter(b => b.staffId === staff.username);
         const totalAllBonuses = allStaffBonuses.reduce((sum, b) => sum + b.amount, 0);
@@ -3338,7 +3338,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                   </p>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 flex-shrink-0">
                 {staff.role === 'staff' && (
                   editingLevelId === (staff.username || staff.id) ? (
                     <div className="flex items-center gap-1">
@@ -3376,21 +3376,21 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                   <>
                     <button
                       onClick={() => setAttendanceHistoryStaff(staff)}
-                      className="p-2 hover:bg-white/10 rounded-lg transition"
+                      className="p-1.5 hover:bg-white/10 rounded-lg transition"
                       title="ประวัติขาด/ลา"
                     >
                       <Calendar className="w-4 h-4 text-blue-300" />
                     </button>
                     <button
                       onClick={() => setBonusHistoryStaff(staff)}
-                      className="p-2 hover:bg-white/10 rounded-lg transition"
+                      className="p-1.5 hover:bg-white/10 rounded-lg transition"
                       title="ประวัติค่าแรงพิเศษ"
                     >
                       <DollarSign className="w-4 h-4 text-yellow-300" />
                     </button>
                     <button
                       onClick={() => setAdvanceHistoryStaff(staff)}
-                      className="p-2 hover:bg-white/10 rounded-lg transition"
+                      className="p-1.5 hover:bg-white/10 rounded-lg transition"
                       title="ประวัติการเบิก"
                     >
                       <FileText className="w-4 h-4 text-purple-300" />
@@ -3399,7 +3399,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                 )}
                 <button
                   onClick={() => handleResetPassword(staff)}
-                  className="p-2 hover:bg-white/10 rounded-lg transition"
+                  className="p-1.5 hover:bg-white/10 rounded-lg transition"
                   title="ตั้งรหัสผ่านใหม่"
                 >
                   <Lock className="w-4 h-4 text-white/60" />
@@ -3407,7 +3407,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                 {staff.role === 'staff' && resignConfirm?.id !== (staff.username || staff.id) && (
                   <button
                     onClick={() => setResignConfirm({ id: staff.username || staff.id, date: new Date().toISOString().split('T')[0] })}
-                    className="p-2 hover:bg-red-500/20 rounded-lg transition"
+                    className="p-1.5 hover:bg-red-500/20 rounded-lg transition"
                     title="บันทึกลาออก"
                   >
                     <UserX className="w-4 h-4 text-red-400/70" />
@@ -3485,8 +3485,8 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                     )}
                     <div className="border-t border-white/20 pt-2 flex justify-between items-center">
                       <span className="text-xs font-medium text-white/70">คงเหลือสุทธิ</span>
-                      <span className={`text-lg font-bold ${staff.netTotalEarnings >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatCurrency(staff.netTotalEarnings)}
+                      <span className={`text-lg font-bold ${(staff.netTotalEarnings || 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {formatCurrency(staff.netTotalEarnings || 0)}
                       </span>
                     </div>
                   </div>
@@ -5077,7 +5077,7 @@ const AppContent = () => {
           id: p.username, username: p.username, name: p.name,
           role: p.role || 'staff', dailyWage: latestWage, daily_wage: latestWage,
           phone: p.phone || '', startDate, start_date: startDate,
-          active: p.active !== false, wageHistory, position: p.position || '',
+          active: p.active !== false, resign_date: p.resign_date || null, wageHistory, position: p.position || '',
           level: p.level || 1,
         };
       }));
