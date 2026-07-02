@@ -131,7 +131,6 @@ export const getAllProfiles = async () => {
   const { data, error } = await supabase
     .from('profiles')
     .select('*')
-    .eq('active', true)
     .order('created_at', { ascending: true });
 
   if (error) {
@@ -502,6 +501,23 @@ export const deleteAbsenceById = async (id) => {
 };
 
 // ==================== PROFILE FIELDS ====================
+export const createStaffProfile = async ({ username, password, name, daily_wage, start_date, position, phone }) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { data, error } = await supabase.from('profiles').insert([{
+    id: crypto.randomUUID(),
+    username, password_hash: password, name,
+    role: 'staff', active: true,
+    daily_wage: daily_wage || 0,
+    start_date: start_date || null,
+    position: position || '',
+    phone: phone || '',
+    level: 1,
+  }]).select().single();
+  if (error) throw error;
+  return data;
+};
+
 export const updateProfileFields = async (username, fields) => {
   const supabase = getSupabase();
   if (!supabase) throw new Error('Supabase not configured');

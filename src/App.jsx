@@ -7,7 +7,7 @@ import {
   Building2, Users, CreditCard, ArrowUpRight, ArrowDownRight,
   Home, FileText, Settings, DollarSign, Briefcase, X, Check,
   Loader2, Image as ImageIcon, Trash2, Edit3, Save, Filter,
-  Cloud, RefreshCw, ChevronDown
+  Cloud, RefreshCw, ChevronDown, UserX
 } from 'lucide-react';
 import {
   getProfile,
@@ -25,6 +25,7 @@ import {
   getAllWageHistory, upsertWageHistoryEntry, deleteWageHistoryEntry, updateWageHistoryDate,
   getAllAbsencesFromDB, insertAbsence, updateAbsenceById, deleteAbsenceById,
   updateProfileFields,
+  createStaffProfile,
 } from './lib/supabase';
 
 // ================== PENALTY CONSTANTS ==================
@@ -1820,12 +1821,13 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
       .filter(s => s.active !== false && s.role !== 'owner')
       .map(staff => {
         const startDate = staff.startDate || staff.start_date;
+        const endDate = staff.resign_date || today;
         const wageHistory = staff.wageHistory && staff.wageHistory.length > 0
           ? staff.wageHistory
           : [{ dailyWage: staff.daily_wage || staff.dailyWage || 0, effectiveDate: startDate || today }];
         const staffAttendance = attendance?.[staff.username] || {};
         const staffAbsences = (absences || []).filter(a => a.staffId === staff.username);
-        const calendarBase = calculateEarningsWithHistory(wageHistory, startDate, today);
+        const calendarBase = calculateEarningsWithHistory(wageHistory, startDate, endDate);
         const leaveDeduction = staffAbsences.length > 0
           ? staffAbsences.reduce((sum, a) => sum + getWageAtDate(wageHistory, a.date), 0)
           : Object.entries(staffAttendance).reduce((total, [month, data]) => {
@@ -3003,7 +3005,97 @@ const AbsenceEditModal = ({ abs, wageHistory, isLegacy, onClose, onSave, onDelet
 };
 
 // Owner Staff Management
-const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onUpdateAbsence, onConvertLegacy, advances, bonuses, onAddAdvance, onAddBonus, onEditAdvance, onDeleteAdvance, onEditBonus, onDeleteBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel }) => {
+const AddStaffModal = ({ isOpen, onClose, onSave }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const [form, setForm] = useState({ name: '', username: '', password: '', daily_wage: '', start_date: today, position: '', phone: '' });
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) { setForm({ name: '', username: '', password: '', daily_wage: '', start_date: today, position: '', phone: '' }); setError(''); }
+  }, [isOpen]);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async () => {
+    if (!form.name.trim()) return setError('กรุณากรอกชื่อ-นามสกุล');
+    if (!form.username.trim()) return setError('กรุณากรอก username');
+    if (!form.password.trim()) return setError('กรุณากรอกรหัสผ่าน');
+    if (!form.daily_wage || isNaN(form.daily_wage)) return setError('กรุณากรอกค่าแรง/วัน');
+    setLoading(true);
+    setError('');
+    try {
+      await onSave({ ...form, daily_wage: parseFloat(form.daily_wage) });
+      onClose();
+    } catch (err) {
+      setError(err.message?.includes('duplicate') || err.message?.includes('unique') ? 'Username นี้มีอยู่แล้ว' : (err.message || 'เกิดข้อผิดพลาด'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="bg-gradient-to-r from-indigo-600 to-purple-600 rounded-t-2xl p-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs text-white/70">Admin</p>
+            <h3 className="font-bold text-white text-lg">เพิ่มพนักงานใหม่</h3>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition"><X className="w-5 h-5 text-white" /></button>
+        </div>
+        <div className="p-4 space-y-3 max-h-[70vh] overflow-y-auto">
+          {error && <div className="bg-red-50 border border-red-200 text-red-600 text-sm rounded-lg px-3 py-2">{error}</div>}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล <span className="text-red-500">*</span></label>
+            <input type="text" value={form.name} onChange={e => set('name', e.target.value)} placeholder="เช่น สมชาย ใจดี" className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username <span className="text-red-500">*</span></label>
+              <input type="text" value={form.username} onChange={e => set('username', e.target.value)} placeholder="เช่น staff3" className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">รหัสผ่าน <span className="text-red-500">*</span></label>
+              <input type="text" value={form.password} onChange={e => set('password', e.target.value)} placeholder="เช่น 1234" className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">ค่าแรง/วัน (บาท) <span className="text-red-500">*</span></label>
+              <input type="number" value={form.daily_wage} onChange={e => set('daily_wage', e.target.value)} placeholder="500" min="0" className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">วันเริ่มงาน</label>
+              <input type="date" value={form.start_date} onChange={e => set('start_date', e.target.value)} className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">ตำแหน่ง</label>
+              <input type="text" value={form.position} onChange={e => set('position', e.target.value)} placeholder="เช่น ช่างติดตั้ง" className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">เบอร์โทร</label>
+              <input type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} placeholder="08x-xxx-xxxx" className="w-full border border-gray-300 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            </div>
+          </div>
+        </div>
+        <div className="p-4 border-t border-gray-100 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-600 text-sm font-medium hover:bg-gray-50 transition">ยกเลิก</button>
+          <button onClick={handleSubmit} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition disabled:opacity-50 flex items-center justify-center gap-2">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {loading ? 'กำลังบันทึก...' : 'เพิ่มพนักงาน'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onUpdateAbsence, onConvertLegacy, advances, bonuses, onAddAdvance, onAddBonus, onEditAdvance, onDeleteAdvance, onEditBonus, onDeleteBonus, onAddAttendance, onEditAttendance, onResetPassword, onEditWage, positions = {}, onSavePosition, onSaveLevel, onResign, onAddStaff }) => {
   const currentMonth = getCurrentMonth();
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -3016,6 +3108,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
   const [levelInput, setLevelInput] = useState('');
   const [attendanceHistoryStaff, setAttendanceHistoryStaff] = useState(null);
   const [editingAbsenceItem, setEditingAbsenceItem] = useState(null); // { abs, wageHistory }
+  const [resignConfirm, setResignConfirm] = useState(null); // { id, date }
 
   // คำนวณจำนวนวันทำงาน (รวมทุกวัน)
   const calculateWorkingDays = (startDate, endDate) => {
@@ -3026,7 +3119,8 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
   };
 
   const allStaffStats = useMemo(() => {
-    const today = new Date();
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayDate = new Date();
     return staffData
       .filter(s => s.active !== false)
       .map(staff => {
@@ -3038,9 +3132,13 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
 
         const dailyWage = staff.daily_wage || staff.dailyWage || 0;
 
+        // ใช้ resign_date ถ้ามี แทน today
+        const endDateStr = staff.resign_date || todayStr;
+        const endDate = staff.resign_date ? new Date(staff.resign_date) : todayDate;
+
         // คำนวณวันทำงานจากวันเริ่มงานใน Sheet
         const startDate = staff.start_date || staff.startDate || staff.created_at;
-        const workingDaysFromStart = startDate ? calculateWorkingDays(startDate, today) : 0;
+        const workingDaysFromStart = startDate ? calculateWorkingDays(startDate, endDate) : 0;
 
         // เงินพิเศษเดือนนี้ (จาก bonuses array)
         const monthBonusList = (bonuses || []).filter(b => b.staffId === staff.username && b.month === currentMonth);
@@ -3060,7 +3158,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
 
         // ใช้ calendar-based เสมอ แล้วหักวันขาด/ลาออก
         // (ไม่ใช้ workDays aggregate เพราะ admin ไม่ได้กรอกทุกเดือน)
-        const calendarBaseWage = calculateEarningsWithHistory(wageHistory, startDate, today);
+        const calendarBaseWage = calculateEarningsWithHistory(wageHistory, startDate, endDateStr);
 
         // หักค่าแรงวันขาด/ลา: ใช้ absences table ถ้ามี ไม่งั้นใช้ aggregate
         const leaveDeduction = staffAbsences.length > 0
@@ -3131,6 +3229,13 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-gray-800">พนักงาน</h2>
         <div className="flex items-center gap-2">
+          <button
+            onClick={onAddStaff}
+            className="bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-emerald-700 transition flex items-center gap-1"
+          >
+            <Plus className="w-4 h-4" />
+            เพิ่มพนักงาน
+          </button>
           <button
             onClick={onAddAttendance}
             className="bg-purple-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-purple-700 transition flex items-center gap-1"
@@ -3296,6 +3401,43 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                 >
                   <Lock className="w-4 h-4 text-white/60" />
                 </button>
+                {staff.role === 'staff' && (
+                  resignConfirm?.id === (staff.username || staff.id) ? (
+                    <div className="flex items-center gap-1 bg-red-500/20 rounded-lg px-2 py-1.5">
+                      <div className="flex flex-col gap-1">
+                        <span className="text-xs text-red-300 whitespace-nowrap">วันที่ลาออก</span>
+                        <input
+                          type="date"
+                          value={resignConfirm.date}
+                          onChange={e => setResignConfirm(r => ({ ...r, date: e.target.value }))}
+                          className="text-xs bg-white/10 border border-red-400/40 text-white rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-red-400"
+                        />
+                      </div>
+                      <button
+                        onClick={() => { onResign && onResign(staff.username || staff.id, resignConfirm.date); setResignConfirm(null); }}
+                        className="p-1 text-red-300 hover:bg-red-500/30 rounded transition mt-3"
+                        title="ยืนยันลาออก"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setResignConfirm(null)}
+                        className="p-1 text-white/40 hover:bg-white/10 rounded transition mt-3"
+                        title="ยกเลิก"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setResignConfirm({ id: staff.username || staff.id, date: new Date().toISOString().split('T')[0] })}
+                      className="p-2 hover:bg-red-500/20 rounded-lg transition"
+                      title="บันทึกลาออก"
+                    >
+                      <UserX className="w-4 h-4 text-red-400/70" />
+                    </button>
+                  )
+                )}
               </div>
             </div>
             {staff.role === 'staff' && (
@@ -3859,6 +4001,67 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
         staff={selectedStaff}
         onReset={onResetPassword}
       />
+
+      {/* พนักงานที่ลาออกแล้ว */}
+      {staffData.filter(s => s.active === false).length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-semibold text-gray-500 mb-3 flex items-center gap-2">
+            <UserX className="w-4 h-4 text-red-400" />
+            พนักงานที่ลาออกแล้ว ({staffData.filter(s => s.active === false).length} คน)
+          </h3>
+          <div className="space-y-2">
+            {staffData.filter(s => s.active === false).map(staff => {
+              const staffAdvances = advances.filter(a => a.staffId === staff.username);
+              const totalAdv = staffAdvances.reduce((sum, a) => sum + a.amount, 0);
+              return (
+                <div key={staff.id} className="bg-gray-100 border border-gray-200 rounded-xl p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-600">{staff.name}</span>
+                        <span className="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full">ลาออกแล้ว</span>
+                      </div>
+                      <p className="text-xs text-gray-400">@{staff.username}</p>
+                      {staff.startDate && (
+                        <p className="text-xs text-gray-400">เริ่มงาน: {formatDate(staff.startDate)}</p>
+                      )}
+                      {staff.resign_date && (
+                        <p className="text-xs text-red-400">ลาออก: {formatDate(staff.resign_date)}</p>
+                      )}
+                      {totalAdv > 0 && (
+                        <p className="text-xs text-purple-500 mt-0.5">เบิกทั้งหมด: {formatCurrency(totalAdv)}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setAttendanceHistoryStaff(staff)}
+                        className="p-2 hover:bg-gray-200 rounded-lg transition"
+                        title="ประวัติขาด/ลา"
+                      >
+                        <Calendar className="w-4 h-4 text-blue-400" />
+                      </button>
+                      <button
+                        onClick={() => setBonusHistoryStaff(staff)}
+                        className="p-2 hover:bg-gray-200 rounded-lg transition"
+                        title="ประวัติเงินพิเศษ"
+                      >
+                        <DollarSign className="w-4 h-4 text-yellow-500" />
+                      </button>
+                      <button
+                        onClick={() => setAdvanceHistoryStaff(staff)}
+                        className="p-2 hover:bg-gray-200 rounded-lg transition"
+                        title="ประวัติเบิกเงิน"
+                      >
+                        <FileText className="w-4 h-4 text-purple-400" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="bg-indigo-50 rounded-xl p-4 mt-4">
         <p className="text-sm text-indigo-700 font-medium mb-1">จัดการผู้ใช้ผ่าน Supabase Dashboard</p>
@@ -4713,6 +4916,7 @@ const AppContent = () => {
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showAbsenceModal, setShowAbsenceModal] = useState(false);
   const [absenceModalInitialStaff, setAbsenceModalInitialStaff] = useState('');
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [editingAttendance, setEditingAttendance] = useState(null);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -4778,7 +4982,7 @@ const AppContent = () => {
         if (data.absences?.length > 0) setAbsences(data.absences);
         if (data.staff?.length > 0) {
           const wageHistoryMap = data.wageHistoryMap || {};
-          const staffProfiles = data.staff.filter(p => p.role !== 'owner' && p.active !== false);
+          const staffProfiles = data.staff.filter(p => p.role !== 'owner');
           setStaffData(staffProfiles.map(p => {
             const staffKey = p.username || p.id;
             const wageHistory = wageHistoryMap[staffKey] || [];
@@ -4789,7 +4993,7 @@ const AppContent = () => {
               id: p.username, username: p.username, name: p.name,
               role: p.role || 'staff', dailyWage: latestWage, daily_wage: latestWage,
               phone: p.phone || '', startDate, start_date: startDate,
-              active: p.active !== false, wageHistory, position: p.position || '',
+              active: p.active !== false, resign_date: p.resign_date || null, wageHistory, position: p.position || '',
               level: p.level || 1,
             };
           }));
@@ -4856,7 +5060,7 @@ const AppContent = () => {
     if (data.bonuses?.length > 0) setBonuses(data.bonuses);
     if (data.staff?.length > 0) {
       const wageHistoryMap = data.wageHistoryMap || {};
-      const staffProfiles = data.staff.filter(p => p.role !== 'owner' && p.active !== false);
+      const staffProfiles = data.staff.filter(p => p.role !== 'owner');
       setStaffData(staffProfiles.map(p => {
         const staffKey = p.username || p.id;
         const wageHistory = wageHistoryMap[staffKey] || [];
@@ -5071,6 +5275,25 @@ const AppContent = () => {
     try { await updateProfileFields(staffId, { start_date: startDate }); } catch (err) { console.error('handleUpdateStartDate error:', err); }
   }, []);
 
+  const handleAddStaff = useCallback(async (formData) => {
+    const created = await createStaffProfile(formData);
+    const newStaff = {
+      id: created.username, username: created.username, name: created.name,
+      role: 'staff', dailyWage: formData.daily_wage, daily_wage: formData.daily_wage,
+      phone: formData.phone || '', startDate: formData.start_date, start_date: formData.start_date,
+      active: true, wageHistory: [{ dailyWage: formData.daily_wage, effectiveDate: formData.start_date }],
+      position: formData.position || '', level: 1,
+    };
+    setStaffData(prev => [...prev, newStaff]);
+  }, []);
+
+  const handleResign = useCallback(async (staffId, resignDate) => {
+    setStaffData(prev => prev.map(s =>
+      (s.username || s.id) === staffId ? { ...s, active: false, resign_date: resignDate } : s
+    ));
+    try { await updateProfileFields(staffId, { active: false, resign_date: resignDate }); } catch (err) { console.error('handleResign error:', err); }
+  }, []);
+
   const handleResetPassword = async (userId, newPassword) => {
     await resetUserPassword(userId, newPassword);
   };
@@ -5240,6 +5463,8 @@ const AppContent = () => {
                 positions={staffPositions}
                 onSavePosition={handleSavePosition}
                 onSaveLevel={handleSaveLevel}
+                onResign={handleResign}
+                onAddStaff={() => setShowAddStaffModal(true)}
               />
             )}
           </>
@@ -5342,6 +5567,12 @@ const AppContent = () => {
         }}
         onSave={handleSaveProject}
         editingProject={editingProject}
+      />
+
+      <AddStaffModal
+        isOpen={showAddStaffModal}
+        onClose={() => setShowAddStaffModal(false)}
+        onSave={handleAddStaff}
       />
 
       <AdvanceModal
