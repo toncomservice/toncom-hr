@@ -3226,36 +3226,39 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-gray-800">พนักงาน</h2>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-lg font-bold text-gray-800 shrink-0">พนักงาน</h2>
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
           <button
             onClick={onAddStaff}
             className="bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-emerald-700 transition flex items-center gap-1"
           >
             <Plus className="w-4 h-4" />
-            เพิ่มพนักงาน
+            <span>เพิ่มพนักงาน</span>
           </button>
           <button
             onClick={onAddAttendance}
-            className="bg-purple-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-purple-700 transition flex items-center gap-1"
+            className="bg-purple-600 text-white p-2 rounded-xl hover:bg-purple-700 transition flex items-center gap-1"
+            title="บันทึกขาด/ลา"
           >
             <Clock className="w-4 h-4" />
-            บันทึกขาด/ลา
+            <span className="hidden sm:inline text-sm font-medium">ขาด/ลา</span>
           </button>
           <button
             onClick={onAddBonus}
-            className="bg-amber-500 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-amber-600 transition flex items-center gap-1"
+            className="bg-amber-500 text-white p-2 rounded-xl hover:bg-amber-600 transition flex items-center gap-1"
+            title="เงินพิเศษ"
           >
             <Plus className="w-4 h-4" />
-            เงินพิเศษ
+            <span className="hidden sm:inline text-sm font-medium">เงินพิเศษ</span>
           </button>
           <button
             onClick={onAddAdvance}
-            className="bg-indigo-600 text-white px-3 py-2 rounded-xl text-sm font-medium hover:bg-indigo-700 transition flex items-center gap-1"
+            className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition flex items-center gap-1"
+            title="บันทึกเบิก"
           >
             <Plus className="w-4 h-4" />
-            บันทึกเบิก
+            <span className="hidden sm:inline text-sm font-medium">บันทึกเบิก</span>
           </button>
         </div>
       </div>
@@ -3401,45 +3404,48 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                 >
                   <Lock className="w-4 h-4 text-white/60" />
                 </button>
-                {staff.role === 'staff' && (
-                  resignConfirm?.id === (staff.username || staff.id) ? (
-                    <div className="flex items-center gap-1 bg-red-500/20 rounded-lg px-2 py-1.5">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-xs text-red-300 whitespace-nowrap">วันที่ลาออก</span>
-                        <input
-                          type="date"
-                          value={resignConfirm.date}
-                          onChange={e => setResignConfirm(r => ({ ...r, date: e.target.value }))}
-                          className="text-xs bg-white/10 border border-red-400/40 text-white rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-red-400"
-                        />
-                      </div>
-                      <button
-                        onClick={() => { onResign && onResign(staff.username || staff.id, resignConfirm.date); setResignConfirm(null); }}
-                        className="p-1 text-red-300 hover:bg-red-500/30 rounded transition mt-3"
-                        title="ยืนยันลาออก"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setResignConfirm(null)}
-                        className="p-1 text-white/40 hover:bg-white/10 rounded transition mt-3"
-                        title="ยกเลิก"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setResignConfirm({ id: staff.username || staff.id, date: new Date().toISOString().split('T')[0] })}
-                      className="p-2 hover:bg-red-500/20 rounded-lg transition"
-                      title="บันทึกลาออก"
-                    >
-                      <UserX className="w-4 h-4 text-red-400/70" />
-                    </button>
-                  )
+                {staff.role === 'staff' && resignConfirm?.id !== (staff.username || staff.id) && (
+                  <button
+                    onClick={() => setResignConfirm({ id: staff.username || staff.id, date: new Date().toISOString().split('T')[0] })}
+                    className="p-2 hover:bg-red-500/20 rounded-lg transition"
+                    title="บันทึกลาออก"
+                  >
+                    <UserX className="w-4 h-4 text-red-400/70" />
+                  </button>
                 )}
               </div>
             </div>
+            {/* Resign confirmation panel */}
+            {staff.role === 'staff' && resignConfirm?.id === (staff.username || staff.id) && (
+              <div className="mb-3 bg-red-500/20 border border-red-400/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                <div className="flex flex-col gap-1 flex-1">
+                  <span className="text-xs text-red-300 font-medium">บันทึกวันที่ลาออก</span>
+                  <input
+                    type="date"
+                    value={resignConfirm.date}
+                    onChange={e => setResignConfirm(r => ({ ...r, date: e.target.value }))}
+                    className="text-sm bg-white/10 border border-red-400/40 text-white rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-red-400 w-full"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { onResign && onResign(staff.username || staff.id, resignConfirm.date); setResignConfirm(null); }}
+                    className="flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white text-xs font-semibold px-3 py-2 rounded-lg transition"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    ยืนยัน
+                  </button>
+                  <button
+                    onClick={() => setResignConfirm(null)}
+                    className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white/70 text-xs px-3 py-2 rounded-lg transition"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    ยกเลิก
+                  </button>
+                </div>
+              </div>
+            )}
+
             {staff.role === 'staff' && (
               <>
                 {/* รายได้รวมตั้งแต่เริ่มงาน */}
