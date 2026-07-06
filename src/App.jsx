@@ -199,6 +199,16 @@ const formatDate = (dateStr) => {
 
 const generateId = (prefix) => `${prefix}${Date.now()}`;
 
+// เรียงรายการให้ล่าสุดอยู่บนสุด: วันที่ใหม่สุดก่อน, ถ้าวันเดียวกันใช้เวลาที่บันทึก (createdAt)
+// ตัวช่วยรอง แล้วค่อย id (ซึ่งเป็น timestamp) เพื่อกันรายการวันเดียวกันเรียงสลับ
+const byNewest = (a, b) => {
+  const d = new Date(b.date) - new Date(a.date);
+  if (d !== 0) return d;
+  const ca = a.createdAt || '', cb = b.createdAt || '';
+  if (ca || cb) return String(cb).localeCompare(String(ca));
+  return String(b.id || '').localeCompare(String(a.id || ''));
+};
+
 const getCurrentMonth = () => {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -1262,7 +1272,7 @@ const LoanModal = ({ isOpen, onClose, loans = [], onSave, onDelete }) => {
   };
 
   if (!isOpen) return null;
-  const sortedLoans = [...loans].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const sortedLoans = [...loans].sort(byNewest);
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
@@ -2065,7 +2075,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     // ค่าสันทนาการที่เบิกไปแล้ว (รายจ่ายหมวด "ค่าสันทนาการ" ในช่วงที่เลือก)
     const entertainmentItems = filteredForStats
       .filter(t => t.type === 'expense' && t.category === 'ค่าสันทนาการ')
-      .sort((a, b) => new Date(b.date) - new Date(a.date));
+      .sort(byNewest);
     const entertainmentSpent = entertainmentItems.reduce((s, t) => s + t.amount, 0);
     const entertainmentRemaining = entertainmentFund - entertainmentSpent;
     // เงินสำรองฉุกเฉิน: 20% จากกำไรรวมแต่ละโปรเจกต์
@@ -2094,7 +2104,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
   const filteredTransactions = useMemo(() => {
     return transactions
       .filter(t => inRange(t.date))
-      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .sort(byNewest)
       .slice(0, 10);
   }, [transactions, inRange]);
 
@@ -2407,7 +2417,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         if (!project) return null;
         const projectTxns = transactions
           .filter(t => t.projectId === selectedProjectId)
-          .sort((a, b) => new Date(b.date) - new Date(a.date));
+          .sort(byNewest);
         const totalIncome = projectTxns.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
         const totalExpense = projectTxns.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
         const profit = totalIncome - totalExpense;
@@ -2526,7 +2536,7 @@ const OwnerTransactions = ({ transactions, projects, onAdd, onEdit, onDelete, fi
       filtered = filtered.filter(t => t.date >= dateRange.from && t.date <= dateRange.to);
     }
     if (typeFilter !== 'all') filtered = filtered.filter(t => t.type === typeFilter);
-    return filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+    return filtered.sort(byNewest);
   }, [transactions, filterProject, dateRange, typeFilter]);
 
   const summary = useMemo(() => {
@@ -3824,7 +3834,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
                     {(() => {
                       const staffAdvances = advances
                         .filter(a => a.staffId === staff.username)
-                        .sort((a, b) => new Date(b.date) - new Date(a.date));
+                        .sort(byNewest);
                       if (staffAdvances.length === 0) {
                         return <p className="text-xs text-white/40 text-center py-2">ยังไม่มีรายการเบิกเงิน</p>;
                       }
@@ -3855,7 +3865,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
         const staffStat = allStaffStats.find(s => s.username === bonusHistoryStaff.username);
         const staffBonuses = (bonuses || [])
           .filter(b => b.staffId === bonusHistoryStaff.username)
-          .sort((a, b) => new Date(b.date) - new Date(a.date));
+          .sort(byNewest);
         const totalAllBonus = staffBonuses.reduce((sum, b) => sum + b.amount, 0);
 
         const byMonth = {};
@@ -3972,7 +3982,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
         const staffUsername = attendanceHistoryStaff.username;
         const staffAbsences = absences
           .filter(a => a.staffId === staffUsername)
-          .sort((a, b) => b.date.localeCompare(a.date));
+          .sort(byNewest);
         const staffStat = allStaffStats.find(s => s.username === staffUsername);
         const wageHistory = staffStat?.wageHistory || [];
 
@@ -4144,7 +4154,7 @@ const OwnerStaff = ({ staffData, attendance, absences = [], onDeleteAbsence, onU
         const staffStat = allStaffStats.find(s => s.username === advanceHistoryStaff.username);
         const staffAdvances = advances
           .filter(a => a.staffId === advanceHistoryStaff.username)
-          .sort((a, b) => new Date(b.date) - new Date(a.date));
+          .sort(byNewest);
         const totalAllAdv = staffAdvances.reduce((sum, a) => sum + a.amount, 0);
 
         // จัดกลุ่มตามเดือน
@@ -4824,7 +4834,7 @@ const StaffDashboard = ({ user, attendance, advances, bonuses, staffData, absenc
 const StaffAttendanceHistory = ({ user, attendance, absences = [], staffData }) => {
   const username = user.profile?.username || user.username || user.email?.split('@')[0];
   const userAttendance = attendance[username] || {};
-  const userAbsences = (absences || []).filter(a => a.staffId === username).sort((a, b) => b.date.localeCompare(a.date));
+  const userAbsences = (absences || []).filter(a => a.staffId === username).sort(byNewest);
   const staffInfo = (staffData || []).find(s => s.username === username);
   const wageHistory = staffInfo?.wageHistory || [{ dailyWage: staffInfo?.daily_wage || 0, effectiveDate: staffInfo?.start_date || '2025-01-01' }];
   const months = Object.keys(userAttendance).sort().reverse();
@@ -4928,7 +4938,7 @@ const StaffAttendanceHistory = ({ user, attendance, absences = [], staffData }) 
 // Staff Advances History
 const StaffAdvancesHistory = ({ user, advances }) => {
   const username = user.profile?.username || user.username || user.email?.split('@')[0];
-  const userAdvances = advances.filter(a => a.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const userAdvances = advances.filter(a => a.staffId === username).sort(byNewest);
   const totalAdvances = userAdvances.reduce((sum, a) => sum + a.amount, 0);
 
   const byMonth = userAdvances.reduce((acc, a) => {
@@ -4988,7 +4998,7 @@ const StaffAdvancesHistory = ({ user, advances }) => {
 // Staff Bonus History
 const StaffBonusHistory = ({ user, bonuses }) => {
   const username = user.profile?.username || user.username || user.email?.split('@')[0];
-  const userBonuses = (bonuses || []).filter(b => b.staffId === username).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const userBonuses = (bonuses || []).filter(b => b.staffId === username).sort(byNewest);
   const totalBonuses = userBonuses.reduce((sum, b) => sum + b.amount, 0);
 
   // จัดกลุ่มตามเดือน

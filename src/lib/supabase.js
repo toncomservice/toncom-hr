@@ -260,6 +260,7 @@ export const getAllTransactions = async () => {
     category: t.category || '', projectId: t.project_id || '',
     description: t.description || '', date: t.date,
     createdBy: t.created_by || '', advanceStaffId: t.advance_staff_id || null,
+    createdAt: t.created_at || '',
   }));
 };
 
@@ -347,6 +348,7 @@ export const getAllAdvancesFromDB = async () => {
   return data.map(a => ({
     id: a.id, staffId: a.staff_id, amount: parseFloat(a.amount) || 0,
     date: a.date, month: a.month, description: a.description || '',
+    createdAt: a.created_at || '',
   }));
 };
 
@@ -390,6 +392,7 @@ export const getAllBonusesFromDB = async () => {
   return data.map(b => ({
     id: b.id, staffId: b.staff_id, amount: parseFloat(b.amount) || 0,
     date: b.date, month: b.month, description: b.description || '',
+    createdAt: b.created_at || '',
   }));
 };
 
@@ -433,6 +436,7 @@ export const getAllLoansFromDB = async () => {
   return data.map(l => ({
     id: l.id, lender: l.lender || '', type: l.type || 'borrow',
     amount: parseFloat(l.amount) || 0, date: l.date, description: l.description || '',
+    createdAt: l.created_at || '',
   }));
 };
 
