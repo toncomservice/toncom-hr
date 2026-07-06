@@ -108,8 +108,9 @@ CREATE TABLE IF NOT EXISTS loans (
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 ALTER TABLE loans ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "auth_all_loans"
-  ON loans FOR ALL USING (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "auth_all_loans" ON loans;
+CREATE POLICY "anon_all_loans"
+  ON loans FOR ALL USING (true) WITH CHECK (true);
 
 -- ============================================================
 -- เสร็จแล้ว! ตรวจสอบได้ที่ Table Editor ใน Supabase Dashboard
