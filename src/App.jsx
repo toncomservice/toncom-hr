@@ -1541,7 +1541,7 @@ const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance, initi
 
 // Revenue Chart Component
 const RevenueChart = ({ transactions, projects }) => {
-  const [period, setPeriod] = useState('week');
+  const [period, setPeriod] = useState('month');
 
   const uncollectedTotal = useMemo(() =>
     (projects || [])
