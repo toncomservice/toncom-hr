@@ -1543,11 +1543,17 @@ const AbsenceLogModal = ({ isOpen, onClose, onSave, staffList, attendance, initi
 const RevenueChart = ({ transactions, projects }) => {
   const [period, setPeriod] = useState('month');
 
+  // ยอดที่ยังไม่ได้เก็บ = มูลค่างาน - เงินที่รับมาแล้ว (มัดจำ/งวด) ของงานที่กำลังทำ
   const uncollectedTotal = useMemo(() =>
     (projects || [])
       .filter(p => p.status === 'in_progress' && p.contractValue > 0)
-      .reduce((sum, p) => sum + p.contractValue, 0)
-  , [projects]);
+      .reduce((sum, p) => {
+        const collected = (transactions || [])
+          .filter(t => t.projectId === p.id && t.type === 'income')
+          .reduce((s, t) => s + t.amount, 0);
+        return sum + Math.max(0, p.contractValue - collected);
+      }, 0)
+  , [projects, transactions]);
 
   const chartData = useMemo(() => {
     const grouped = {};
@@ -1859,9 +1865,15 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     const realNetProfit = totalIncome - totalExpense - Math.max(0, wageOwed);
     const activeProjects = projects.filter(p => p.status === 'in_progress').length;
     // มูลค่างานที่ยังไม่ได้เรียกเก็บ (in_progress เท่านั้น)
+    // ยอดที่ยังไม่ได้เก็บ = มูลค่างาน - เงินที่รับมาแล้ว (มัดจำ/งวด) ของงานที่กำลังทำ
     const uncollectedTotal = projects
       .filter(p => p.status === 'in_progress' && p.contractValue > 0)
-      .reduce((sum, p) => sum + p.contractValue, 0);
+      .reduce((sum, p) => {
+        const collected = transactions
+          .filter(t => t.projectId === p.id && t.type === 'income')
+          .reduce((s, t) => s + t.amount, 0);
+        return sum + Math.max(0, p.contractValue - collected);
+      }, 0);
 
     // กำไรรวมจากแต่ละโปรเจกต์ (เฉพาะโปรเจกต์ที่มีกำไรบวก)
     const filteredForStats = transactions.filter(t => inRange(t.date));
