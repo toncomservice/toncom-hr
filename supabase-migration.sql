@@ -5,9 +5,10 @@
 
 -- 1. เพิ่ม columns ใน profiles (staff data)
 ALTER TABLE profiles
-  ADD COLUMN IF NOT EXISTS daily_wage NUMERIC(10,2) DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS start_date DATE,
-  ADD COLUMN IF NOT EXISTS position   TEXT DEFAULT '';
+  ADD COLUMN IF NOT EXISTS daily_wage  NUMERIC(10,2) DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS start_date  DATE,
+  ADD COLUMN IF NOT EXISTS position    TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS resign_date DATE;   -- วันที่ลาออก (หยุดคิดค่าแรง ณ วันนี้)
 
 -- 2. wage_history (ย้ายจาก localStorage)
 CREATE TABLE IF NOT EXISTS wage_history (

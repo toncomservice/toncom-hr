@@ -1815,10 +1815,13 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
     const totalStaffCost = staffWageBreakdown.reduce((sum, s) => sum + s.wageCost, 0);
 
-    // ค่าแรงสะสมจริงถึงวันนี้ (ทุกคน) — calendar-based เสมอ หักขาด/ลา
+    // ค่าแรงสะสมจริงถึงวันนี้ (รวมคนลาออกด้วย) — calendar-based เสมอ หักขาด/ลา
+    // ต้องรวมคนลาออกเพราะฝั่งเงินเบิก (totalAdvancesAllTime) นับของทุกคน
+    // ถ้านับเฉพาะคน active ค่าแรงคงเหลือจะติดลบผิด แล้วโดนบีบเหลือ 0
+    // สำหรับคนลาออก คิดค่าแรงถึงวันลาออก (resign_date) ไม่ใช่วันนี้
     const today = new Date().toISOString().split('T')[0];
     const staffWagesAccumulated = (staffData || [])
-      .filter(s => s.active !== false && s.role !== 'owner')
+      .filter(s => s.role !== 'owner')
       .map(staff => {
         const startDate = staff.startDate || staff.start_date;
         const endDate = staff.resign_date || today;
