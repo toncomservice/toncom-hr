@@ -1821,13 +1821,13 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
 
     const totalStaffCost = staffWageBreakdown.reduce((sum, s) => sum + s.wageCost, 0);
 
-    // ค่าแรงสะสมจริงถึงวันนี้ (รวมคนลาออกด้วย) — calendar-based เสมอ หักขาด/ลา
-    // ต้องรวมคนลาออกเพราะฝั่งเงินเบิก (totalAdvancesAllTime) นับของทุกคน
-    // ถ้านับเฉพาะคน active ค่าแรงคงเหลือจะติดลบผิด แล้วโดนบีบเหลือ 0
-    // สำหรับคนลาออก คิดค่าแรงถึงวันลาออก (resign_date) ไม่ใช่วันนี้
+    // ค่าแรงสะสมจริงถึงวันนี้ — ใช้สูตรเดียวกับหน้าพนักงาน (allStaffStats.netTotalEarnings)
+    // เพื่อให้ "ค่าแรงคงเหลือ" หน้าหลัก = ผลรวม "คงเหลือสุทธิ" ของพนักงานทุกคนพอดี
+    // นับเฉพาะพนักงานที่ยัง active (ตรงกับรายชื่อที่แสดงในหน้าพนักงาน)
+    // และหักเงินเบิกเฉพาะของคนกลุ่มเดียวกัน (ไม่ใช้ totalAdvancesAllTime) กันตัวเลขเพี้ยน
     const today = new Date().toISOString().split('T')[0];
     const staffWagesAccumulated = (staffData || [])
-      .filter(s => s.role !== 'owner')
+      .filter(s => s.active !== false && s.role !== 'owner')
       .map(staff => {
         const startDate = staff.startDate || staff.start_date;
         const endDate = staff.resign_date || today;
@@ -1850,12 +1850,23 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         const staffBonuses = (bonuses || []).filter(b => b.staffId === staff.username).reduce((s, b) => s + b.amount, 0);
         const totalEarned = (earned || 0) + staffBonuses;
         const staffAdvances = advances.filter(a => a.staffId === staff.username).reduce((s, a) => s + a.amount, 0);
-        return { name: staff.name, earned: totalEarned, advances: staffAdvances, owed: Math.max(0, totalEarned - staffAdvances) };
+        // ค่าปรับสาย/ขาด (เหมือนหน้าพนักงาน) — หักออกจากยอดคงเหลือด้วย
+        const latePenalties = Object.values(staffAttendance).reduce((s, m) => s + (m.lateDays || 0) * LATE_PENALTY, 0);
+        const absentPenalties = staffAbsences.length > 0
+          ? staffAbsences.filter(a => a.type === 'absent').length * ABSENT_PENALTY
+          : Object.values(staffAttendance).reduce((s, m) => s + (m.absentDays || 0) * ABSENT_PENALTY, 0);
+        const penalties = latePenalties + absentPenalties;
+        const net = totalEarned - staffAdvances - penalties;
+        return { name: staff.name, earned: totalEarned, advances: staffAdvances, penalties, net };
       });
 
     const totalStaffWagesEarned = staffWagesAccumulated.reduce((sum, s) => sum + s.earned, 0);
+    const totalStaffAdvances = staffWagesAccumulated.reduce((sum, s) => sum + s.advances, 0);
+    const totalStaffPenalties = staffWagesAccumulated.reduce((sum, s) => sum + s.penalties, 0);
+    // ค่าแรงคงเหลือ = ผลรวมคงเหลือสุทธิของพนักงาน (ตรงกับหน้าพนักงาน)
+    const wageOwed = totalStaffWagesEarned - totalStaffAdvances - totalStaffPenalties;
+    // เงินเบิกทั้งหมด (ทุกคน รวมคนลาออก) — ใช้เป็นรายจ่ายเงินสดจริง
     const totalAdvancesAllTime = advances.reduce((sum, a) => sum + a.amount, 0);
-    const wageOwed = totalStaffWagesEarned - totalAdvancesAllTime;
     // รายจ่ายรวม = ค่าใช้จ่ายดำเนินงาน + ค่าแรงพนักงานที่จ่ายไปแล้ว
     const totalExpense = operatingExpense + totalAdvancesAllTime;
 
@@ -1897,7 +1908,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     // เงินสำรองฉุกเฉิน: 20% จากกำไรรวมแต่ละโปรเจกต์
     const emergencyFund = totalProjectProfit * 0.20;
 
-    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, entertainmentItems, emergencyFund, totalProjectProfit };
+    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalStaffAdvances, totalStaffPenalties, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, entertainmentItems, emergencyFund, totalProjectProfit };
   }, [transactions, projects, staffData, attendance, advances, bonuses, absences, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
@@ -2002,7 +2013,7 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
         <StatsCard
           title="ค่าแรงคงเหลือ (ถึงวันนี้)"
           value={formatCurrency(Math.max(0, stats.wageOwed))}
-          subtitle={`แรง+พิเศษ ${formatCurrency(stats.totalStaffWagesEarned)} - เบิก ${formatCurrency(stats.totalAdvancesAllTime)}`}
+          subtitle={`แรง+พิเศษ ${formatCurrency(stats.totalStaffWagesEarned)} - เบิก ${formatCurrency(stats.totalStaffAdvances)}${stats.totalStaffPenalties > 0 ? ` - ปรับ ${formatCurrency(stats.totalStaffPenalties)}` : ''}`}
           icon={Users}
           color="purple"
         />
