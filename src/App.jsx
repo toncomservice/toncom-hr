@@ -22,6 +22,7 @@ import {
   getAllAttendanceFromDB, upsertAttendance,
   getAllAdvancesFromDB, insertAdvance, deleteAdvanceById, updateAdvanceById,
   getAllBonusesFromDB, insertBonus, updateBonusById, deleteBonusById,
+  getAllLoansFromDB, insertLoan, updateLoanById, deleteLoanById,
   getAllWageHistory, upsertWageHistoryEntry, deleteWageHistoryEntry, updateWageHistoryDate,
   getAllAbsencesFromDB, insertAbsence, updateAbsenceById, deleteAbsenceById,
   updateProfileFields,
@@ -83,7 +84,7 @@ const useSupabaseData = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const [transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff, absences] =
+      const [transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff, absences, loans] =
         await Promise.all([
           getAllTransactions(),
           getAllProjectsFromDB(),
@@ -93,8 +94,9 @@ const useSupabaseData = () => {
           getAllWageHistory(),
           getAllProfiles(),
           getAllAbsencesFromDB(),
+          getAllLoansFromDB(),
         ]);
-      return { transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff, absences };
+      return { transactions, projects, attendance, advances, bonuses, wageHistoryMap, staff, absences, loans };
     } catch (err) {
       console.error('fetchAllData error:', err);
       setError('ไม่สามารถดึงข้อมูลได้');
@@ -1208,6 +1210,167 @@ const AdvanceModal = ({ isOpen, onClose, onSave, staffList, editingAdvance }) =>
   );
 };
 
+// Loan Modal - จัดการเงินกู้ (กู้เข้ามา / จ่ายคืน) + สรุปยอดคงค้าง
+const LoanModal = ({ isOpen, onClose, loans = [], onSave, onDelete }) => {
+  const today = new Date().toISOString().split('T')[0];
+  const [type, setType] = useState('borrow');
+  const [lender, setLender] = useState('');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [date, setDate] = useState(today);
+  const [editingId, setEditingId] = useState(null);
+
+  const resetForm = () => {
+    setType('borrow'); setLender(''); setAmount(''); setDescription(''); setDate(today); setEditingId(null);
+  };
+
+  useEffect(() => { if (isOpen) resetForm(); }, [isOpen]);
+
+  const lenders = useMemo(() => [...new Set(loans.map(l => l.lender).filter(Boolean))], [loans]);
+
+  const summary = useMemo(() => {
+    const byLender = {};
+    let borrowed = 0, repaid = 0;
+    loans.forEach(l => {
+      if (!byLender[l.lender]) byLender[l.lender] = { lender: l.lender, borrowed: 0, repaid: 0 };
+      if (l.type === 'repay') { byLender[l.lender].repaid += l.amount; repaid += l.amount; }
+      else { byLender[l.lender].borrowed += l.amount; borrowed += l.amount; }
+    });
+    const lenderList = Object.values(byLender)
+      .map(x => ({ ...x, outstanding: x.borrowed - x.repaid }))
+      .sort((a, b) => b.outstanding - a.outstanding);
+    return { borrowed, repaid, outstanding: borrowed - repaid, lenderList };
+  }, [loans]);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!lender.trim() || !amount) return;
+    onSave({
+      id: editingId || generateId('L'),
+      lender: lender.trim(),
+      type,
+      amount: parseFloat(amount),
+      description,
+      date,
+    });
+    resetForm();
+  };
+
+  const startEdit = (l) => {
+    setEditingId(l.id); setType(l.type); setLender(l.lender);
+    setAmount(String(l.amount)); setDescription(l.description || ''); setDate(l.date);
+  };
+
+  if (!isOpen) return null;
+  const sortedLoans = [...loans].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[92vh] flex flex-col">
+        <div className="p-4 border-b flex items-center justify-between shrink-0">
+          <h2 className="text-lg font-bold text-gray-800">เงินกู้ / หนี้ที่ต้องคืน</h2>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4 overflow-y-auto">
+          {/* สรุปยอดคงค้าง */}
+          <div className="bg-gradient-to-br from-rose-500 to-red-600 rounded-xl p-4 text-white">
+            <p className="text-sm opacity-90">ยอดคงค้างต้องจ่ายคืน</p>
+            <p className="text-3xl font-bold">{formatCurrency(summary.outstanding)}</p>
+            <div className="flex gap-4 mt-2 text-xs">
+              <span className="opacity-90">กู้มา {formatCurrency(summary.borrowed)}</span>
+              <span className="opacity-90">คืนแล้ว {formatCurrency(summary.repaid)}</span>
+            </div>
+            {summary.lenderList.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-white/20 space-y-1">
+                {summary.lenderList.map(x => (
+                  <div key={x.lender} className="flex justify-between text-xs">
+                    <span className="text-white/80">{x.lender}</span>
+                    <span className="font-semibold">{formatCurrency(x.outstanding)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ฟอร์มเพิ่ม/แก้ไข */}
+          <form onSubmit={handleSubmit} className="space-y-3 bg-gray-50 rounded-xl p-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setType('borrow')}
+                className={`py-2 rounded-lg text-sm font-medium transition ${type === 'borrow' ? 'bg-rose-500 text-white' : 'bg-white text-gray-500 border border-gray-200'}`}>
+                กู้เข้ามา
+              </button>
+              <button type="button" onClick={() => setType('repay')}
+                className={`py-2 rounded-lg text-sm font-medium transition ${type === 'repay' ? 'bg-emerald-500 text-white' : 'bg-white text-gray-500 border border-gray-200'}`}>
+                จ่ายคืน
+              </button>
+            </div>
+            <input type="text" value={lender} onChange={e => setLender(e.target.value)} list="lender-list"
+              placeholder="ผู้ให้กู้ (เช่น แม่, ธนาคาร)" required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+            <datalist id="lender-list">
+              {lenders.map(l => <option key={l} value={l} />)}
+            </datalist>
+            <div className="grid grid-cols-2 gap-2">
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+                placeholder="จำนวนเงิน" required min="0"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+            </div>
+            <input type="text" value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="หมายเหตุ (เช่น ดอกเบี้ย, เงื่อนไข)"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-400 focus:outline-none" />
+            <div className="flex gap-2">
+              <button type="submit" className="flex-1 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                {editingId ? 'บันทึกการแก้ไข' : 'เพิ่มรายการ'}
+              </button>
+              {editingId && (
+                <button type="button" onClick={resetForm} className="px-4 py-2.5 bg-gray-200 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-300 transition">
+                  ยกเลิก
+                </button>
+              )}
+            </div>
+          </form>
+
+          {/* รายการทั้งหมด */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium text-gray-500">ประวัติทั้งหมด ({sortedLoans.length})</p>
+            {sortedLoans.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">ยังไม่มีรายการเงินกู้</p>
+            ) : sortedLoans.map(l => (
+              <div key={l.id} className="flex items-center justify-between bg-white border border-gray-100 rounded-xl p-3 shadow-sm">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.type === 'repay' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'}`}>
+                      {l.type === 'repay' ? 'จ่ายคืน' : 'กู้เข้ามา'}
+                    </span>
+                    <span className="font-semibold text-gray-800 truncate">{l.lender}</span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">{formatDate(l.date)}{l.description ? ` • ${l.description}` : ''}</p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className={`font-bold text-sm ${l.type === 'repay' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {l.type === 'repay' ? '-' : '+'}{formatCurrency(l.amount)}
+                  </span>
+                  <button onClick={() => startEdit(l)} className="p-1.5 hover:bg-gray-100 rounded-lg transition" title="แก้ไข">
+                    <Edit3 className="w-4 h-4 text-gray-400" />
+                  </button>
+                  <button onClick={() => onDelete(l.id)} className="p-1.5 hover:bg-red-50 rounded-lg transition" title="ลบ">
+                    <Trash2 className="w-4 h-4 text-red-400" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Bonus Modal
 const BonusModal = ({ isOpen, onClose, onSave, staffList, editingBonus }) => {
   const [staffId, setStaffId] = useState('');
@@ -1695,7 +1858,7 @@ const RevenueChart = ({ transactions, projects }) => {
 };
 
 // Owner Dashboard
-const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances, bonuses, absences = [] }) => {
+const OwnerDashboard = ({ transactions, projects, staffData, attendance, advances, bonuses, absences = [], loans = [], onManageLoans }) => {
   const today = new Date().toISOString().split('T')[0];
   const [viewMode, setViewMode] = useState('all'); // custom, week, month, all
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -1908,8 +2071,24 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
     // เงินสำรองฉุกเฉิน: 20% จากกำไรรวมแต่ละโปรเจกต์
     const emergencyFund = totalProjectProfit * 0.20;
 
-    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalStaffAdvances, totalStaffPenalties, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, entertainmentItems, emergencyFund, totalProjectProfit };
-  }, [transactions, projects, staffData, attendance, advances, bonuses, absences, inRange, monthsInRange, viewMode, dateRange]);
+    // เงินกู้: ยอดคงค้าง = กู้มา - จ่ายคืน (ทั้งระบบ และแยกตามผู้ให้กู้)
+    // เงินกู้แยกต่างหาก ไม่ปนกับรายรับ/รายจ่าย/กำไรของกิจการ
+    const loanBorrowed = (loans || []).filter(l => l.type !== 'repay').reduce((s, l) => s + l.amount, 0);
+    const loanRepaid = (loans || []).filter(l => l.type === 'repay').reduce((s, l) => s + l.amount, 0);
+    const loanOutstanding = loanBorrowed - loanRepaid;
+    const loanByLenderMap = {};
+    (loans || []).forEach(l => {
+      loanByLenderMap[l.lender] = (loanByLenderMap[l.lender] || 0) + (l.type === 'repay' ? -l.amount : l.amount);
+    });
+    const loansByLender = Object.entries(loanByLenderMap)
+      .map(([lender, outstanding]) => ({ lender, outstanding }))
+      .filter(x => x.outstanding > 0)
+      .sort((a, b) => b.outstanding - a.outstanding);
+    // กำไรหลังหักคืนเงินกู้ (แสดงอย่างเดียว — ไม่แก้ realNetProfit เดิม)
+    const profitAfterLoans = realNetProfit - loanOutstanding;
+
+    return { totalIncome, totalExpense, operatingExpense, totalAdvances, incomeCount, expenseCount, profit, totalStaffCost, netProfit, wageOwed, totalStaffWagesEarned, totalStaffAdvances, totalStaffPenalties, totalAdvancesAllTime, realNetProfit, activeProjects, uncollectedTotal, staffWageBreakdown, staffWagesAccumulated, daysInRange, useAttendance, entertainmentFund, entertainmentSpent, entertainmentRemaining, entertainmentItems, emergencyFund, totalProjectProfit, loanBorrowed, loanRepaid, loanOutstanding, loansByLender, profitAfterLoans };
+  }, [transactions, projects, staffData, attendance, advances, bonuses, absences, loans, inRange, monthsInRange, viewMode, dateRange]);
 
   // รายการในช่วงที่เลือก
   const filteredTransactions = useMemo(() => {
@@ -2073,6 +2252,58 @@ const OwnerDashboard = ({ transactions, projects, staffData, attendance, advance
           </div>
         </div>
       )}
+
+      {/* เงินกู้ / หนี้ที่ต้องคืน */}
+      <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-800 text-sm flex items-center gap-2">
+            <span className="text-base">🏦</span>
+            เงินกู้ / หนี้ที่ต้องคืน
+          </h3>
+          <button
+            onClick={onManageLoans}
+            className="bg-rose-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-rose-600 transition flex items-center gap-1"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            จัดการเงินกู้
+          </button>
+        </div>
+        {stats.loanOutstanding > 0 ? (
+          <>
+            <div className="bg-gradient-to-br from-rose-500 to-red-600 rounded-xl p-4 text-white">
+              <p className="text-xs opacity-90">ยอดคงค้างต้องจ่ายคืน</p>
+              <p className="text-2xl font-bold">{formatCurrency(stats.loanOutstanding)}</p>
+              <div className="flex gap-4 mt-1 text-xs opacity-90">
+                <span>กู้มา {formatCurrency(stats.loanBorrowed)}</span>
+                <span>คืนแล้ว {formatCurrency(stats.loanRepaid)}</span>
+              </div>
+              {stats.loansByLender.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-white/20 space-y-1">
+                  {stats.loansByLender.map(x => (
+                    <div key={x.lender} className="flex justify-between text-xs">
+                      <span className="text-white/80">{x.lender}</span>
+                      <span className="font-semibold">{formatCurrency(x.outstanding)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className={`mt-3 rounded-xl p-3 flex items-center justify-between ${stats.profitAfterLoans >= 0 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+              <div>
+                <p className="text-xs text-gray-500">กำไรหลังหักคืนเงินกู้</p>
+                <p className="text-[11px] text-gray-400">กำไรสุทธิ - ยอดคงค้างเงินกู้</p>
+              </div>
+              <p className={`text-lg font-bold ${stats.profitAfterLoans >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {formatCurrency(stats.profitAfterLoans)}
+              </p>
+            </div>
+          </>
+        ) : (
+          <p className="text-sm text-gray-400 text-center py-4">
+            {stats.loanBorrowed > 0 ? 'จ่ายคืนเงินกู้ครบแล้ว' : 'ยังไม่มีการกู้เงิน'}
+          </p>
+        )}
+      </div>
 
       {/* Modal ค่าสันทนาการ */}
       {showEntertainmentModal && (
@@ -4942,6 +5173,7 @@ const AppContent = () => {
   const [attendance, setAttendance] = useState(INITIAL_ATTENDANCE);
   const [advances, setAdvances] = useState(INITIAL_ADVANCES);
   const [bonuses, setBonuses] = useState(INITIAL_BONUSES);
+  const [loans, setLoans] = useState([]);
   const [absences, setAbsences] = useState([]);
   const [staffData, setStaffData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
@@ -4952,6 +5184,7 @@ const AppContent = () => {
   const [showTransactionModal, setShowTransactionModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
   const [showAdvanceModal, setShowAdvanceModal] = useState(false);
+  const [showLoanModal, setShowLoanModal] = useState(false);
   const [showBonusModal, setShowBonusModal] = useState(false);
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [showAbsenceModal, setShowAbsenceModal] = useState(false);
@@ -5019,6 +5252,7 @@ const AppContent = () => {
         if (data.attendance && Object.keys(data.attendance).length > 0) setAttendance(data.attendance);
         if (data.advances?.length > 0) setAdvances(data.advances);
         if (data.bonuses?.length > 0) setBonuses(data.bonuses);
+        if (data.loans?.length > 0) setLoans(data.loans);
         if (data.absences?.length > 0) setAbsences(data.absences);
         if (data.staff?.length > 0) {
           const wageHistoryMap = data.wageHistoryMap || {};
@@ -5181,6 +5415,24 @@ const AppContent = () => {
     if (confirm('ต้องการลบรายการเงินพิเศษนี้?')) {
       setBonuses(prev => prev.filter(b => b.id !== id));
       try { await deleteBonusById(id); } catch (err) { console.error('handleDeleteBonus error:', err); }
+    }
+  }, []);
+
+  const handleSaveLoan = useCallback(async (loan) => {
+    const exists = loans.some(l => l.id === loan.id);
+    if (exists) {
+      setLoans(prev => prev.map(l => l.id === loan.id ? loan : l));
+      try { await updateLoanById(loan.id, loan); } catch (err) { console.error('handleUpdateLoan error:', err); }
+    } else {
+      setLoans(prev => [...prev, loan]);
+      try { await insertLoan(loan); } catch (err) { console.error('handleSaveLoan error:', err); }
+    }
+  }, [loans]);
+
+  const handleDeleteLoan = useCallback(async (id) => {
+    if (confirm('ต้องการลบรายการเงินกู้นี้?')) {
+      setLoans(prev => prev.filter(l => l.id !== id));
+      try { await deleteLoanById(id); } catch (err) { console.error('handleDeleteLoan error:', err); }
     }
   }, []);
 
@@ -5432,7 +5684,7 @@ const AppContent = () => {
         {isOwner ? (
           <>
             {currentPage === 'dashboard' && (
-              <OwnerDashboard transactions={transactions} projects={projects} staffData={staffData} attendance={attendance} advances={advances} bonuses={bonuses} absences={absences} />
+              <OwnerDashboard transactions={transactions} projects={projects} staffData={staffData} attendance={attendance} advances={advances} bonuses={bonuses} absences={absences} loans={loans} onManageLoans={() => setShowLoanModal(true)} />
             )}
             {currentPage === 'transactions' && (
               <OwnerTransactions
@@ -5621,6 +5873,14 @@ const AppContent = () => {
         onSave={handleSaveAdvance}
         staffList={staffList}
         editingAdvance={editingAdvance}
+      />
+
+      <LoanModal
+        isOpen={showLoanModal}
+        onClose={() => setShowLoanModal(false)}
+        loans={loans}
+        onSave={handleSaveLoan}
+        onDelete={handleDeleteLoan}
       />
 
       <BonusModal

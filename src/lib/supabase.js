@@ -423,6 +423,48 @@ export const deleteBonusById = async (id) => {
   if (error) throw error;
 };
 
+// ==================== LOANS ====================
+export const getAllLoansFromDB = async () => {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('loans').select('*').order('date', { ascending: false });
+  if (error) { console.error('getAllLoans error:', error); return []; }
+  return data.map(l => ({
+    id: l.id, lender: l.lender || '', type: l.type || 'borrow',
+    amount: parseFloat(l.amount) || 0, date: l.date, description: l.description || '',
+  }));
+};
+
+export const insertLoan = async (loan) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('loans').insert({
+    id: loan.id, lender: loan.lender, type: loan.type || 'borrow',
+    amount: parseFloat(loan.amount) || 0, date: loan.date,
+    description: loan.description || '',
+  });
+  if (error) throw error;
+};
+
+export const updateLoanById = async (id, fields) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('loans').update({
+    lender: fields.lender, type: fields.type || 'borrow',
+    amount: parseFloat(fields.amount) || 0, date: fields.date,
+    description: fields.description || '',
+  }).eq('id', id);
+  if (error) throw error;
+};
+
+export const deleteLoanById = async (id) => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error('Supabase not configured');
+  const { error } = await supabase.from('loans').delete().eq('id', id);
+  if (error) throw error;
+};
+
 // ==================== WAGE HISTORY ====================
 export const getAllWageHistory = async () => {
   const supabase = getSupabase();

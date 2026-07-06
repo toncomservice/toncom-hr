@@ -97,6 +97,20 @@ ALTER TABLE bonuses ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "auth_all_bonuses"
   ON bonuses FOR ALL USING (auth.role() = 'authenticated');
 
+-- 8. loans (เงินกู้เข้ามาหมุนในระบบ + การจ่ายคืน)
+CREATE TABLE IF NOT EXISTS loans (
+  id          TEXT PRIMARY KEY,
+  lender      TEXT NOT NULL,
+  type        TEXT NOT NULL DEFAULT 'borrow',  -- 'borrow' | 'repay'
+  amount      NUMERIC(12,2) NOT NULL DEFAULT 0,
+  date        DATE NOT NULL,
+  description TEXT,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE loans ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "auth_all_loans"
+  ON loans FOR ALL USING (auth.role() = 'authenticated');
+
 -- ============================================================
 -- เสร็จแล้ว! ตรวจสอบได้ที่ Table Editor ใน Supabase Dashboard
 -- ============================================================
