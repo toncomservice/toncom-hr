@@ -2555,9 +2555,17 @@ const OwnerProjects = ({ projects, transactions, onAdd, onEdit }) => {
               </span>
             </div>
             {p.contractValue > 0 && (
-              <div className="mb-3 flex items-center justify-between text-xs px-2 py-1.5 rounded-lg bg-white/15">
-                <span className="text-white/70">มูลค่างาน</span>
-                <span className="font-semibold text-white">{formatCurrency(p.contractValue)}{p.status === 'completed' ? ' (เก็บเงินแล้ว)' : ''}</span>
+              <div className="mb-3 px-2 py-1.5 rounded-lg bg-white/15 space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-white/70">มูลค่างาน</span>
+                  <span className="font-semibold text-white">{formatCurrency(p.contractValue)}{p.status === 'completed' ? ' (เก็บเงินแล้ว)' : ''}</span>
+                </div>
+                {p.status !== 'completed' && (
+                  <div className="flex items-center justify-between text-xs border-t border-white/15 pt-1">
+                    <span className="text-white/70">ลูกค้าค้างจ่าย</span>
+                    <span className="font-semibold text-amber-200">{formatCurrency(Math.max(0, p.contractValue - p.income))}</span>
+                  </div>
+                )}
               </div>
             )}
             <div className="grid grid-cols-3 gap-2">
